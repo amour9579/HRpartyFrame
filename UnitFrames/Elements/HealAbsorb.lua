@@ -14,7 +14,17 @@ function ns.uf:CreateHealAbsorbOverlay(frame)
     bar:SetParent(frame)
     bar:SetFrameStrata(frame:GetFrameStrata())
     bar:SetFrameLevel(frame.Health:GetFrameLevel() + 12)
-    bar:SetStatusBarTexture(BAR_TEXTURE)
+    local cfg = ns:GetUnitFrameConfig(frame)
+    local opt = cfg.healAbsorb or {}
+
+    local textureMap = {
+        shield = "Interface\\RaidFrame\\Shield-Fill",
+        flat = "Interface\\Buttons\\WHITE8x8",
+        normtex = "Interface\\AddOns\\HRpartyFrame\\Media\\Textures\\NormTex2",
+    }
+
+    local tex = textureMap[opt.texture or "shield"] or textureMap.shield
+    bar:SetStatusBarTexture(tex)
     bar:SetMinMaxValues(0, 1)
     bar:SetValue(0)
     bar:EnableMouse(false)
@@ -63,9 +73,23 @@ function ns.uf:UpdateHealAbsorbOverlay(frame)
         return
     end
 
+    local cfg = ns:GetUnitFrameConfig(frame)
+    local opt = cfg.healAbsorb or {}
+
+    local side = opt.side or "right"
     local healthBar = frame.Health
     bar:ClearAllPoints()
-    bar:SetAllPoints(healthBar)
+    if side == "right" then
+        bar:SetAllPoints(healthBar)
+        if bar.SetReverseFill then
+            bar:SetReverseFill(true)
+        end
+    else
+        bar:SetAllPoints(healthBar)
+        if bar.SetReverseFill then
+            bar:SetReverseFill(false)
+        end
+    end
 
     local okMinMax = pcall(bar.SetMinMaxValues, bar, 0, maxHealth)
     local okValue = pcall(bar.SetValue, bar, healAbsorb)
