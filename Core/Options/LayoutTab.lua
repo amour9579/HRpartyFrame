@@ -118,7 +118,7 @@ function ns:GetLayoutOptionsArgs()
 
     args.showSoloDesc = {
         type = "description",
-        name = "|cffffaa00※ secure header 특성상 즉시 반영되지 않으면 /reload 하세요.|r",
+        name = "|cffffaa00※ secure header 특성상 즉시 반영되지 않으면 /reload 하세요.|r\n    |cffffaa00텍스처 변경은 /reload 후 반영됩니다.|r",
         order = 2.3,
     }
 
@@ -170,10 +170,62 @@ function ns:GetLayoutOptionsArgs()
         end,
     }
 
+    args.healAbsorbSide = {
+        type = "select",
+        name = "치유 흡수 텍스쳐 방향",
+        order = 3.3,
+        values = {
+            left = "왼쪽",
+            right = "오른쪽",
+        },
+        get = function()
+            local cfg = ns:GetPartyConfig()
+            cfg.healAbsorb = cfg.healAbsorb or {}
+            return cfg.healAbsorb.side or "right"
+        end,
+        set = function(_, value)
+            local partyCfg = ns:GetPartyConfig()
+            local raidCfg = ns:GetRaidConfig()
+
+            partyCfg.healAbsorb = partyCfg.healAbsorb or {}
+            raidCfg.healAbsorb = raidCfg.healAbsorb or {}
+
+            partyCfg.healAbsorb.side = value
+            raidCfg.healAbsorb.side = value
+
+            ns:SafeRefresh()
+        end,
+    }
+
+    args.healAbsorbTexture = {
+        type = "select",
+        name = "흡수 텍스처",
+        order = 3.4,
+        values = {
+            shield = "기본",
+            flat = "단색",
+            normtex = "NormTex",
+        },
+        get = function()
+            local cfg = ns:GetPartyConfig()
+            cfg.healAbsorb = cfg.healAbsorb or {}
+            return cfg.healAbsorb.texture or "shield"
+        end,
+        set = function(_, value)
+            local partyCfg = ns:GetPartyConfig()
+            local raidCfg = ns:GetRaidConfig()
+
+            partyCfg.healAbsorb = partyCfg.healAbsorb or {}
+            raidCfg.healAbsorb = raidCfg.healAbsorb or {}
+
+            partyCfg.healAbsorb.texture = value
+            raidCfg.healAbsorb.texture = value
+        end,
+    }
     args.powerHeight = {
         type = "range",
         name = "자원바 높이",
-        order = 3.3,
+        order = 3.8,
         min = 4,
         max = 16,
         step = 1,
@@ -194,7 +246,6 @@ function ns:GetLayoutOptionsArgs()
                 ns.uf:RefreshPowerLayout()
             end
 
-            --ns:SafeRefresh()
         end,
     }
 
@@ -202,7 +253,7 @@ function ns:GetLayoutOptionsArgs()
         type = "description",
         name = "\n",
         width = "full",
-        order = 3.5,
+        order = 3.9,
     }
 
     args.namePoint = {
