@@ -32,13 +32,12 @@ function ns.uf:ApplyRaidTargetSettings(frame)
 
     local holder = frame.HRRaidTargetIndicatorFrame
     local icon = frame.HRRaidTargetIndicator
+    frame.RaidTargetIndicator = icon
     if not opts or opts.enabled == false then
         holder:Hide()
-        frame.RaidTargetIndicator = nil
+        icon:SetAlpha(0)
         return
     end
-
-    frame.RaidTargetIndicator = icon
 
     local anchor = opts.anchor or "TOP"
     local x = opts.x or 0
@@ -49,5 +48,6 @@ function ns.uf:ApplyRaidTargetSettings(frame)
     holder:SetPoint(anchor, frame, anchor, x, y)
     holder:SetSize(size, size)
     holder:SetFrameLevel(frame:GetFrameLevel() + 40)
+    icon:SetAlpha(1)
     holder:Show()
 end
