@@ -32,6 +32,7 @@ local function EnsureCalculator(frame)
 end
 
 local function GetAttachedHealAbsorb(frame)
+    print("healAbsorb =", healAbsorb)
     if not frame or not frame.unit or not UnitExists(frame.unit) then
         return nil
     end
@@ -95,7 +96,7 @@ function ns.uf:CreateHealAbsorbOverlay(frame)
     end
 
     local bar = CreateFrame("StatusBar", nil, frame)
-    bar:SetFrameLevel(frame.Health:GetFrameLevel() + 4)
+    bar:SetFrameLevel(frame.Health:GetFrameLevel() + 20)
     bar:SetStatusBarTexture(BAR_TEXTURE)
     bar:SetMinMaxValues(0, 1)
     bar:SetValue(0)
@@ -160,7 +161,6 @@ function ns.uf:UpdateHealAbsorbOverlay(frame)
         missingHealth = 0
     end
 
-    -- 체력 결손분까지만 프레임 내부에 붙여서 표시
     local attachedHealAbsorb = healAbsorb
     if attachedHealAbsorb > missingHealth then
         attachedHealAbsorb = missingHealth
@@ -189,11 +189,19 @@ function ns.uf:UpdateHealAbsorbOverlay(frame)
     local currentHealthWidth = math.floor((health / maxHealth) * healthWidth + 0.5)
     local rightEdgeOffset = healthWidth - currentHealthWidth
 
-    bar:ClearAllPoints()
+    --[[bar:ClearAllPoints()
     bar:SetPoint("TOPRIGHT", healthBar, "TOPRIGHT", -rightEdgeOffset, 0)
     bar:SetPoint("BOTTOMRIGHT", healthBar, "BOTTOMRIGHT", -rightEdgeOffset, 0)
     bar:SetWidth(absorbWidth)
     bar:SetMinMaxValues(0, maxHealth)
     bar:SetValue(attachedHealAbsorb)
+    bar:Show()]]
+
+    bar:ClearAllPoints()
+    bar:SetAllPoints(healthBar)
+    bar:SetStatusBarTexture("Interface\\Buttons\\WHITE8x8")
+    bar:GetStatusBarTexture():SetVertexColor(1, 0, 0, 0.6)
+    bar:SetMinMaxValues(0, 1)
+    bar:SetValue(1)
     bar:Show()
 end
