@@ -18,7 +18,7 @@ function ns.uf:CreateHealAbsorbOverlay(frame)
     local opt = cfg.healAbsorb or {}
 
     local textureMap = {
-        shield = "Interface\\RaidFrame\\Shield-Fill",
+        shield = "Interface\\AddOns\\HRpartyFrame\\Media\\Textures\\DF_Stripes_Dense",
         flat = "Interface\\Buttons\\WHITE8x8",
         normtex = "Interface\\AddOns\\HRpartyFrame\\Media\\Textures\\NormTex2",
     }
@@ -41,7 +41,7 @@ function ns.uf:CreateHealAbsorbOverlay(frame)
     local bg = bar:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetTexture(BG_TEXTURE)
-    bg:SetVertexColor(0, 0, 0, 0.35)
+    bg:SetVertexColor(0, 0, 0, 0)
     bar.bg = bg
 
     frame.HealthHealAbsorbBar = bar
@@ -75,39 +75,22 @@ function ns.uf:UpdateHealAbsorbOverlay(frame)
 
     local cfg = ns:GetUnitFrameConfig(frame)
     local opt = cfg.healAbsorb or {}
-
     local side = opt.side or "right"
     local healthBar = frame.Health
-    bar:ClearAllPoints()
 
-    if side == "right" then
-        bar:SetAllPoints(healthBar)
-        if bar.SetReverseFill then
-            bar:SetReverseFill(true)
-        end
-    else
-        bar:SetAllPoints(healthBar)
-        if bar.SetReverseFill then
-            bar:SetReverseFill(false)
-        end
+    bar:ClearAllPoints()
+    bar:SetAllPoints(healthBar)
+
+    if bar.SetReverseFill then
+        bar:SetReverseFill(side == "right")
     end
 
-    local okHasValue, hasValue = pcall(function()
-        return maxHealth > 0 and healAbsorb > 0
+    local okMinMax = pcall(function()
+        bar:SetMinMaxValues(0, maxHealth)
     end)
 
-    if not okHasValue or not hasValue then
-        bar:Hide()
-        return
-    end
-
-    local okMinMax = pcall(bar.SetMinMaxValues, bar, 0, maxHealth)
     local okValue = pcall(function()
-        local value = healAbsorb
-        if value > maxHealth then
-            value = maxHealth
-        end
-        bar:SetValue(value)
+        bar:SetValue(healAbsorb)
     end)
 
     if not okMinMax or not okValue then
