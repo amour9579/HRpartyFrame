@@ -180,6 +180,11 @@ local defaults = {
                 y = 0,
             },
         },
+        healAbsorb = {
+            enabled = true,
+            side = "right",     -- left / right
+            texture = "shield", -- shield / flat / normtex
+        },
     },
 
     raid = {
