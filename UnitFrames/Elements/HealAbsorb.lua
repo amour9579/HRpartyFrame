@@ -36,7 +36,7 @@ function ns.uf:CreateHealAbsorbOverlay(frame)
         tex:SetHorizTile(false)
         tex:SetVertTile(false)
         tex:SetTexCoord(0, 1, 0, 1)
-        tex:SetVertexColor(0.85, 0.15, 0.15, 0.70)
+        tex:SetVertexColor(0.85, 0.15, 0.15, 0.00)
     end
     local bg = bar:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
@@ -103,5 +103,8 @@ function ns.uf:UpdateHealAbsorbOverlay(frame)
         return
     end
 
+    if healAbsorb > 0 then
+        print("HealAbsorb:", unit, healAbsorb, maxHealth)
+    end
     bar:Show()
 end
