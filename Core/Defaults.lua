@@ -179,6 +179,13 @@ local defaults = {
                 x = 0,
                 y = 0,
             },
+            tactical = {
+                enabled = true,
+                size = 18,
+                anchor = "TOP",
+                x = 0,
+                y = 12,
+            },
         },
         healAbsorb = {
             enabled = true,
@@ -370,6 +377,13 @@ local defaults = {
                 anchor = "CENTER",
                 x = 0,
                 y = 0,
+            },
+            tactical = {
+                enabled = true,
+                size = 14,
+                anchor = "TOP",
+                x = 0,
+                y = 8,
             },
         },
     },

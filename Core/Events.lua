@@ -795,6 +795,10 @@ function ns:OnEvent(event, ...)
         end
         return
     end
+    if event == "RAID_TARGET_UPDATE" then
+        self:RefreshStatusIcons()
+        return
+    end
 end
 
 eventFrame:SetScript("OnEvent", function(_, event, ...)
@@ -827,3 +831,4 @@ eventFrame:RegisterEvent("UNIT_MAXPOWER")
 eventFrame:RegisterEvent("UNIT_CONNECTION")
 eventFrame:RegisterEvent("PLAYER_FLAGS_CHANGED")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+eventFrame:RegisterEvent("RAID_TARGET_UPDATE")
