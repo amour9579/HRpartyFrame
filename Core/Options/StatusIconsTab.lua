@@ -91,7 +91,7 @@ local function CreateIconGroup(label, dbGetter, order)
     }
 end
 
-local function CreateStatusIconsSection(label, dbGetter, order)
+local function CreateStatusIconsSection(label, dbGetter, cfgGetter, order)
     return {
         type = "group",
         name = label,
@@ -133,6 +133,9 @@ local function CreateStatusIconsSection(label, dbGetter, order)
             rez = CreateIconGroup("부활/준비", function()
                 return dbGetter().rez
             end, 40),
+            raidTarget = CreateIconGroup("전술 아이콘", function()
+                return cfgGetter().raidTarget
+            end, 60),
         },
     }
 end
@@ -141,10 +144,14 @@ function ns:GetStatusIconOptionsArgs()
     return {
         party = CreateStatusIconsSection("파티", function()
             return ns:GetPartyConfig().statusIcons
+        end, function()
+            return ns:GetPartyConfig()
         end, 10),
 
         raid = CreateStatusIconsSection("레이드", function()
             return ns:GetRaidConfig().statusIcons
+        end, function()
+            return ns:GetRaidConfig()
         end, 20),
     }
 end
