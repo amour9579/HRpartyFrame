@@ -36,12 +36,12 @@ function ns.uf:CreateHealAbsorbOverlay(frame)
         tex:SetHorizTile(false)
         tex:SetVertTile(false)
         tex:SetTexCoord(0, 1, 0, 1)
-        tex:SetVertexColor(0.85, 0.15, 0.15, 0.00)
+        tex:SetVertexColor(0.85, 0.15, 0.15, 0.70)
     end
     local bg = bar:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetTexture(BG_TEXTURE)
-    bg:SetVertexColor(0, 0, 0, 0)
+    bg:SetVertexColor(0, 0, 0, 0.35)
     bar.bg = bg
 
     frame.HealthHealAbsorbBar = bar
