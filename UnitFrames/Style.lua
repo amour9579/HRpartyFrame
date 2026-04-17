@@ -62,9 +62,13 @@ function ns:CreateStyle(frame, unit)
     CreateBackground(frame)
     CreateHealth(frame)
 
-    --[[if ns.uf and ns.uf.CreateHealAbsorbOverlay then
+    if ns.uf and ns.uf.CreateHealAbsorbOverlay then
         ns.uf:CreateHealAbsorbOverlay(frame)
-    end]]
+    end
+
+    if ns.uf and ns.uf.CreateRaidTargetIndicator then
+        ns.uf:CreateRaidTargetIndicator(frame)
+    end
     if not frame.__isRaidFrame and ns.uf and ns.uf.CreatePower then
         ns.uf:CreatePower(frame)
     end
@@ -89,9 +93,9 @@ function ns:CreateStyle(frame, unit)
         ns.uf:UpdateCenterDebuff(frame)
     end
 
-    --[[if ns.uf and ns.uf.UpdateHealAbsorbOverlay then
+    if ns.uf and ns.uf.UpdateHealAbsorbOverlay then
         ns.uf:UpdateHealAbsorbOverlay(frame)
-    end]]
+    end
     if ns.uf and ns.uf.CreateBorder then
         ns.uf:CreateBorder(frame)
     end
@@ -116,6 +120,9 @@ function ns:CreateStyle(frame, unit)
         ns.uf:ApplyStatusIconSettings(frame)
     end
 
+    if ns.uf and ns.uf.ApplyRaidTargetSettings then
+        ns.uf:ApplyRaidTargetSettings(frame)
+    end
     if ns.uf and ns.uf.UpdateStatusIcons then
         ns.uf:UpdateStatusIcons(frame)
     end
