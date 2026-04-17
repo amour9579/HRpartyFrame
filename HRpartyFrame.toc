@@ -43,6 +43,7 @@ UnitFrames\Elements\Name.lua
 UnitFrames\Elements\Border.lua
 UnitFrames\Elements\Power.lua
 UnitFrames\Elements\HealAbsorb.lua
+UnitFrames\Elements\RaidTarget.lua
 
 Indicators\AuraIndicators.lua
 Indicators\CenterDebuff.lua
