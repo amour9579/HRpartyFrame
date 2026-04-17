@@ -81,25 +81,6 @@ local READY_CHECK_READY_TEXTURE = "Interface\\RaidFrame\\ReadyCheck-Ready"
 local READY_CHECK_NOT_READY_TEXTURE = "Interface\\RaidFrame\\ReadyCheck-NotReady"
 local READY_CHECK_WAITING_TEXTURE = "Interface\\RaidFrame\\ReadyCheck-Waiting"
 
-local PREVIEW_RAID_TARGET_INDEX = 8
-
-local function SetTacticalIcon(texture, iconFrame, index)
-    if not texture or not iconFrame then
-        return
-    end
-
-    local applied = pcall(function()
-        SetRaidTargetIconTexture(texture, index)
-        texture:SetTexCoord(0, 1, 0, 1)
-        texture:SetAlpha(1)
-        iconFrame:Show()
-    end)
-
-    if not applied then
-        texture:SetAlpha(0)
-        iconFrame:Hide()
-    end
-end
 local function IsReadyCheckActive(now)
     local state = ns.readyCheckState
     return state and state.active and state.expiresAt and state.expiresAt > now
@@ -253,63 +234,33 @@ local function EnsureRezIcon(frame)
     frame.RezIcon = rezFrame
 end
 
-local function EnsureTacticalIcon(frame)
-    if frame.TacticalIcon then
-        return
-    end
-
-    local tacticalFrame = CreateFrame("Frame", nil, frame)
-    tacticalFrame:SetFrameLevel(frame:GetFrameLevel() + 30)
-    tacticalFrame:SetSize(16, 16)
-
-    local tactical = tacticalFrame:CreateTexture(nil, "OVERLAY")
-    tactical:SetAllPoints()
-    tactical:SetAlpha(0)
-    tacticalFrame.icon = tactical
-
-    frame.TacticalIcon = tacticalFrame
-end
 local function BuildLayoutKey(frame, db)
-    local roleShown = db and db.enabled and db.role and db.role.enabled and frame.RoleIcon and frame.RoleIcon:IsShown() and
-        "1" or "0"
-    local leaderShown = db and db.enabled and db.leader and db.leader.enabled and frame.LeaderIcon and
-        frame.LeaderIcon:IsShown() and "1" or "0"
-    local summonShown = db and db.enabled and db.summon and db.summon.enabled and frame.SummonIcon and
-        frame.SummonIcon:IsShown() and "1" or "0"
-    local rezShown = db and db.enabled and db.rez and db.rez.enabled and frame.RezIcon and frame.RezIcon:IsShown() and
-        "1" or "0"
-    local tacticalShown = db and db.enabled and db.tactical and db.tactical.enabled and frame.TacticalIcon and
-        frame.TacticalIcon:IsShown() and "1" or "0"
+    local roleShown = db and db.enabled and db.role and db.role.enabled and frame.RoleIcon and frame.RoleIcon:IsShown() and "1" or "0"
+    local leaderShown = db and db.enabled and db.leader and db.leader.enabled and frame.LeaderIcon and frame.LeaderIcon:IsShown() and "1" or "0"
+    local summonShown = db and db.enabled and db.summon and db.summon.enabled and frame.SummonIcon and frame.SummonIcon:IsShown() and "1" or "0"
+    local rezShown = db and db.enabled and db.rez and db.rez.enabled and frame.RezIcon and frame.RezIcon:IsShown() and "1" or "0"
 
     return table.concat({
         roleShown,
         leaderShown,
         summonShown,
         rezShown,
-        tacticalShown,
         db and db.role and (db.role.anchor or DEFAULT_ANCHOR) or "",
         tostring(db and db.role and db.role.size or 0),
         tostring(db and db.role and db.role.x or 0),
         tostring(db and db.role and db.role.y or 0),
-
         db and db.leader and (db.leader.anchor or DEFAULT_ANCHOR) or "",
         tostring(db and db.leader and db.leader.size or 0),
         tostring(db and db.leader and db.leader.x or 0),
         tostring(db and db.leader and db.leader.y or 0),
-
         db and db.summon and (db.summon.anchor or DEFAULT_ANCHOR) or "",
         tostring(db and db.summon and db.summon.size or 0),
         tostring(db and db.summon and db.summon.x or 0),
         tostring(db and db.summon and db.summon.y or 0),
-
         db and db.rez and (db.rez.anchor or DEFAULT_ANCHOR) or "",
         tostring(db and db.rez and db.rez.size or 0),
         tostring(db and db.rez and db.rez.x or 0),
         tostring(db and db.rez and db.rez.y or 0),
-        db and db.tactical and (db.tactical.anchor or DEFAULT_ANCHOR) or "",
-        tostring(db and db.tactical and db.tactical.size or 0),
-        tostring(db and db.tactical and db.tactical.x or 0),
-        tostring(db and db.tactical and db.tactical.y or 0),
     }, ":")
 end
 
@@ -324,13 +275,11 @@ local function ApplyAutoLayout(frame, db)
     local leaderOpts = db and db.leader
     local summonOpts = db and db.summon
     local rezOpts = db and db.rez
-    local tacticalOpts = db and db.tactical
 
     ApplyIconLayout(frame.RoleIcon, frame, roleOpts)
     ApplyIconLayout(frame.LeaderIcon, frame, leaderOpts)
     ApplyIconLayout(frame.SummonIcon, frame, summonOpts)
     ApplyIconLayout(frame.RezIcon, frame, rezOpts)
-    ApplyIconLayout(frame.TacticalIcon, frame, tacticalOpts)
 end
 
 function ns.uf:CreateStatusIcons(frame)
@@ -342,7 +291,6 @@ function ns.uf:CreateStatusIcons(frame)
     EnsureLeaderIcon(frame)
     EnsureSummonIcon(frame)
     EnsureRezIcon(frame)
-    EnsureTacticalIcon(frame)
 end
 
 function ns.uf:ApplyStatusIconSettings(frame)
@@ -361,7 +309,6 @@ function ns.uf:ApplyStatusIconSettings(frame)
         frame.RoleIcon:Hide()
         frame.LeaderIcon:Hide()
         frame.RezIcon:Hide()
-        frame.TacticalIcon:Hide()
         frame.__hrStatusLayoutKey = nil
         return
     end
@@ -402,14 +349,6 @@ function ns.uf:ApplyStatusIconSettings(frame)
         end
     end
 
-    if db.tactical and db.tactical.enabled then
-        frame.TacticalIcon:Show()
-    else
-        frame.TacticalIcon:Hide()
-        if frame.TacticalIcon.icon then
-            frame.TacticalIcon.icon:SetAlpha(0)
-        end
-    end
     frame.__hrStatusLayoutKey = nil
     ApplyAutoLayout(frame, db)
 end
@@ -456,13 +395,6 @@ function ns.uf:UpdateStatusIconPreview(frame)
         frame.RezIcon.icon:SetAlpha(0)
     end
 
-    if db.tactical and db.tactical.enabled then
-        frame.TacticalIcon:Show()
-        SetTacticalIcon(frame.TacticalIcon.icon, frame.TacticalIcon, PREVIEW_RAID_TARGET_INDEX)
-    else
-        frame.TacticalIcon:Hide()
-        frame.TacticalIcon.icon:SetAlpha(0)
-    end
     ApplyAutoLayout(frame, db)
 end
 
@@ -482,7 +414,6 @@ function ns.uf:UpdateStatusIcons(frame)
         frame.RoleIcon:Hide()
         frame.LeaderIcon:Hide()
         frame.RezIcon:Hide()
-        frame.TacticalIcon:Hide()
         frame.__hrStatusLayoutKey = nil
         return
     end
@@ -526,12 +457,5 @@ function ns.uf:UpdateStatusIcons(frame)
         frame.RezIcon.icon:SetAlpha(0)
     end
 
-    if db.tactical and db.tactical.enabled then
-        frame.TacticalIcon:Show()
-        SetTacticalIcon(frame.TacticalIcon.icon, frame.TacticalIcon, GetRaidTargetIndex(unit))
-    else
-        frame.TacticalIcon:Hide()
-        frame.TacticalIcon.icon:SetAlpha(0)
-    end
     ApplyAutoLayout(frame, db)
 end
