@@ -2,9 +2,12 @@ local _, ns = ...
 
 ns.uf = ns.uf or {}
 
-local function EnsureHealPredictionCalculator(frame)
-    if frame.__hrHealPredictionCalculator then
-        return frame.__hrHealPredictionCalculator
+local BAR_TEXTURE = "Interface\\RaidFrame\\Shield-Fill"
+local BG_TEXTURE = "Interface\\Buttons\\WHITE8x8"
+
+local function EnsureCalculator(frame)
+    if frame.__hrHealAbsorbCalc then
+        return frame.__hrHealAbsorbCalc
     end
 
     if not CreateUnitHealPredictionCalculator then
@@ -16,37 +19,30 @@ local function EnsureHealPredictionCalculator(frame)
         return nil
     end
 
-    -- 기본 설정으로 초기화
     if calc.SetToDefaults then
         calc:SetToDefaults()
     end
 
-    -- heal absorb를 있는 그대로 보도록 설정
     if calc.SetHealAbsorbMode and Enum and Enum.UnitHealAbsorbMode and Enum.UnitHealAbsorbMode.Total then
         calc:SetHealAbsorbMode(Enum.UnitHealAbsorbMode.Total)
     end
 
-    -- 최대 체력 기준으로 clamp
-    if calc.SetHealAbsorbClampMode and Enum and Enum.UnitHealAbsorbClampMode and Enum.UnitHealAbsorbClampMode.MaximumHealth then
-        calc:SetHealAbsorbClampMode(Enum.UnitHealAbsorbClampMode.MaximumHealth)
-    end
-
-    frame.__hrHealPredictionCalculator = calc
+    frame.__hrHealAbsorbCalc = calc
     return calc
 end
 
-local function GetHealAbsorbAmount(frame)
+local function GetAttachedHealAbsorb(frame)
     if not frame or not frame.unit or not UnitExists(frame.unit) then
-        return 0
+        return nil
     end
 
     if UnitIsDeadOrGhost(frame.unit) then
         return 0
     end
 
-    local calc = EnsureHealPredictionCalculator(frame)
+    local calc = EnsureCalculator(frame)
     if not calc or not UnitGetDetailedHealPrediction then
-        return 0
+        return nil
     end
 
     if calc.Reset then
@@ -59,64 +55,145 @@ local function GetHealAbsorbAmount(frame)
         calc:SetHealAbsorbMode(Enum.UnitHealAbsorbMode.Total)
     end
 
-    if calc.SetHealAbsorbClampMode and Enum and Enum.UnitHealAbsorbClampMode and Enum.UnitHealAbsorbClampMode.MaximumHealth then
-        calc:SetHealAbsorbClampMode(Enum.UnitHealAbsorbClampMode.MaximumHealth)
-    end
-
     UnitGetDetailedHealPrediction(frame.unit, nil, calc)
 
+    if calc.HasSecretValues and calc:HasSecretValues() then
+        return nil
+    end
     if calc.GetTotalHealAbsorbs then
         return calc:GetTotalHealAbsorbs() or 0
     end
 
-    if calc.GetHealAbsorbs then
-        local amount = calc:GetHealAbsorbs()
-        return amount or 0
+    return nil
+end
+
+local function GetHealthValues(frame)
+    if not frame or not frame.unit or not UnitExists(frame.unit) then
+        return nil, nil
     end
 
-    return 0
+    local health = UnitHealth(frame.unit)
+    local maxHealth = UnitHealthMax(frame.unit)
+
+    if issecretvalue and (issecretvalue(health) or issecretvalue(maxHealth)) then
+        return nil, nil
+    end
+
+    health = tonumber(health)
+    maxHealth = tonumber(maxHealth)
+
+    if not health or not maxHealth or maxHealth <= 0 then
+        return nil, nil
+    end
+
+    return health, maxHealth
 end
 
 function ns.uf:CreateHealAbsorbOverlay(frame)
-    if not frame or not frame.Health or frame.HealthHealAbsorb then
+    if not frame or not frame.Health or frame.HealthHealAbsorbBar then
         return
     end
 
-    local overlay = frame.Health:CreateTexture(nil, "OVERLAY")
-    overlay:SetTexture("Interface\\Buttons\\WHITE8x8")
-    overlay:SetAllPoints(frame.Health)
-    overlay:SetVertexColor(0.10, 0.10, 0.10, 0.45)
-    overlay:Hide()
+    local bar = CreateFrame("StatusBar", nil, frame)
+    bar:SetFrameLevel(frame.Health:GetFrameLevel() + 4)
+    bar:SetStatusBarTexture(BAR_TEXTURE)
+    bar:SetMinMaxValues(0, 1)
+    bar:SetValue(0)
+    bar:Hide()
 
-    frame.HealthHealAbsorb = overlay
+    local bg = bar:CreateTexture(nil, "BACKGROUND")
+    bg:SetAllPoints()
+    bg:SetTexture(BG_TEXTURE)
+    bg:SetVertexColor(0.10, 0.45, 0.65, 0.20)
+    bar.bg = bg
+
+    local border = CreateFrame("Frame", nil, bar, "BackdropTemplate")
+    border:SetPoint("TOPLEFT", bar, "TOPLEFT", -1, 1)
+    border:SetPoint("BOTTOMRIGHT", bar, "BOTTOMRIGHT", 1, -1)
+    border:SetBackdrop({
+        edgeFile = BG_TEXTURE,
+        edgeSize = 1,
+    })
+    border:SetBackdropBorderColor(0.10, 0.75, 1.00, 0.90)
+    bar.border = border
+
+    frame.HealthHealAbsorbBar = bar
 end
 
 function ns.uf:UpdateHealAbsorbOverlay(frame)
-    if not frame or not frame.Health or not frame.HealthHealAbsorb then
+    if not frame or not frame.Health or not frame.HealthHealAbsorbBar then
         return
     end
 
-    local overlay = frame.HealthHealAbsorb
+    local bar = frame.HealthHealAbsorbBar
 
     if not frame.unit or not UnitExists(frame.unit) or UnitIsDeadOrGhost(frame.unit) then
-        overlay:Hide()
+        bar:Hide()
         return
     end
 
-    local healAbsorb = GetHealAbsorbAmount(frame)
+    local health, maxHealth = GetHealthValues(frame)
+    if not health or not maxHealth then
+        bar:Hide()
+        return
+    end
 
-    -- 12.0.x secret value 방어
+    local healAbsorb = GetAttachedHealAbsorb(frame)
+    if not healAbsorb then
+        bar:Hide()
+        return
+    end
+
     if issecretvalue and issecretvalue(healAbsorb) then
-        -- secret이면 직접 비교하지 않고 안전하게 숨김
-        -- 필요하면 여기서 항상 Show()로 바꿀 수 있지만, 우선 오작동 방지를 위해 숨김 처리
-        overlay:Hide()
+        bar:Hide()
         return
     end
 
-    if not healAbsorb or healAbsorb <= 0 then
-        overlay:Hide()
+    healAbsorb = tonumber(healAbsorb) or 0
+    if healAbsorb <= 0 then
+        bar:Hide()
         return
     end
 
-    overlay:Show()
+    local missingHealth = maxHealth - health
+    if missingHealth < 0 then
+        missingHealth = 0
+    end
+
+    -- 체력 결손분까지만 프레임 내부에 붙여서 표시
+    local attachedHealAbsorb = healAbsorb
+    if attachedHealAbsorb > missingHealth then
+        attachedHealAbsorb = missingHealth
+    end
+
+    if attachedHealAbsorb <= 0 then
+        bar:Hide()
+        return
+    end
+
+    local healthBar = frame.Health
+    local healthWidth = healthBar:GetWidth()
+    local healthHeight = healthBar:GetHeight()
+
+    if not healthWidth or healthWidth <= 0 or not healthHeight or healthHeight <= 0 then
+        bar:Hide()
+        return
+    end
+
+    local absorbWidth = math.floor((attachedHealAbsorb / maxHealth) * healthWidth + 0.5)
+    if absorbWidth <= 0 then
+        bar:Hide()
+        return
+    end
+
+    local currentHealthWidth = math.floor((health / maxHealth) * healthWidth + 0.5)
+    local rightEdgeOffset = healthWidth - currentHealthWidth
+
+    bar:ClearAllPoints()
+    bar:SetPoint("TOPRIGHT", healthBar, "TOPRIGHT", -rightEdgeOffset, 0)
+    bar:SetPoint("BOTTOMRIGHT", healthBar, "BOTTOMRIGHT", -rightEdgeOffset, 0)
+    bar:SetWidth(absorbWidth)
+    bar:SetMinMaxValues(0, maxHealth)
+    bar:SetValue(attachedHealAbsorb)
+    bar:Show()
 end
