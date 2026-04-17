@@ -753,7 +753,7 @@ function ns:OnEvent(event, ...)
         return
     end
 
-    if event == "UNIT_AURA" then
+    if event == "UNIT_AURA" or event == "UNIT_HEAL_ABSORB_AMOUNT_CHANGED" then
         QueueAuraUpdate(unit)
         return
     end
@@ -816,6 +816,7 @@ eventFrame:RegisterEvent("READY_CHECK_FINISHED")
 eventFrame:RegisterEvent("INCOMING_RESURRECT_CHANGED")
 eventFrame:RegisterEvent("INCOMING_SUMMON_CHANGED")
 eventFrame:RegisterEvent("UNIT_AURA")
+eventFrame:RegisterEvent("UNIT_HEAL_ABSORB_AMOUNT_CHANGED")
 eventFrame:RegisterEvent("UNIT_NAME_UPDATE")
 eventFrame:RegisterEvent("UNIT_HEALTH")
 eventFrame:RegisterEvent("UNIT_MAXHEALTH")
