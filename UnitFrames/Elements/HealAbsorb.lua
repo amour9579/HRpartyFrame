@@ -79,6 +79,7 @@ function ns.uf:UpdateHealAbsorbOverlay(frame)
     local side = opt.side or "right"
     local healthBar = frame.Health
     bar:ClearAllPoints()
+
     if side == "right" then
         bar:SetAllPoints(healthBar)
         if bar.SetReverseFill then
@@ -91,20 +92,28 @@ function ns.uf:UpdateHealAbsorbOverlay(frame)
         end
     end
 
-    if maxHealth == nil or healAbsorb == nil or maxHealth <= 0 or healAbsorb <= 0 then
+    local okHasValue, hasValue = pcall(function()
+        return maxHealth > 0 and healAbsorb > 0
+    end)
+
+    if not okHasValue or not hasValue then
         bar:Hide()
         return
     end
+
     local okMinMax = pcall(bar.SetMinMaxValues, bar, 0, maxHealth)
-    local okValue = pcall(bar.SetValue, bar, math.min(healAbsorb, maxHealth))
+    local okValue = pcall(function()
+        local value = healAbsorb
+        if value > maxHealth then
+            value = maxHealth
+        end
+        bar:SetValue(value)
+    end)
 
     if not okMinMax or not okValue then
         bar:Hide()
         return
     end
 
-    if healAbsorb > 0 then
-        print("HealAbsorb:", unit, healAbsorb, maxHealth)
-    end
     bar:Show()
 end
