@@ -133,9 +133,6 @@ local function CreateStatusIconsSection(label, dbGetter, order)
             rez = CreateIconGroup("부활/준비", function()
                 return dbGetter().rez
             end, 40),
-            tactical = CreateIconGroup("전술 아이콘", function()
-                return dbGetter().tactical
-            end, 50),
         },
     }
 end
