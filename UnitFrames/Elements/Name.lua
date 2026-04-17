@@ -96,7 +96,6 @@ function ns.uf:UpdateNameStyle(frame)
 
     frame.Name:ClearAllPoints()
 
-    -- width 완전 제거
     frame.Name:SetWidth(0)
 
     frame.Name:SetJustifyH(justifyH)
