@@ -41,7 +41,7 @@ function ns.uf:CreateHealAbsorbOverlay(frame)
     local bg = bar:CreateTexture(nil, "BACKGROUND")
     bg:SetAllPoints()
     bg:SetTexture(BG_TEXTURE)
-    bg:SetVertexColor(0, 0, 0, 0.35)
+    bg:SetVertexColor(0, 0, 0, 0)
     bar.bg = bg
 
     frame.HealthHealAbsorbBar = bar
@@ -91,8 +91,12 @@ function ns.uf:UpdateHealAbsorbOverlay(frame)
         end
     end
 
+    if maxHealth == nil or healAbsorb == nil or maxHealth <= 0 or healAbsorb <= 0 then
+        bar:Hide()
+        return
+    end
     local okMinMax = pcall(bar.SetMinMaxValues, bar, 0, maxHealth)
-    local okValue = pcall(bar.SetValue, bar, healAbsorb)
+    local okValue = pcall(bar.SetValue, bar, math.min(healAbsorb, maxHealth))
 
     if not okMinMax or not okValue then
         bar:Hide()
