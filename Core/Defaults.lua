@@ -47,6 +47,13 @@ local defaults = {
             },
         },
 
+        raidTarget = {
+            enabled = true,
+            size = 18,
+            anchor = "TOP",
+            x = 0,
+            y = 10,
+        },
         classIndicators = {
             DRUID = {
                 {
@@ -179,6 +186,7 @@ local defaults = {
                 x = 0,
                 y = 0,
             },
+            
         },
         healAbsorb = {
             enabled = true,
@@ -244,6 +252,13 @@ local defaults = {
             },
         },
 
+        raidTarget = {
+            enabled = true,
+            size = 14,
+            anchor = "TOP",
+            x = 0,
+            y = 8,
+        },
         classIndicators = {
             DRUID = {
                 {
