@@ -52,6 +52,11 @@ local function RefreshStatusIconWorker(frame)
     end
 end
 
+local function RefreshRaidTargetWorker(frame)
+    if ns.uf and ns.uf.ApplyRaidTargetSettings then
+        ns.uf:ApplyRaidTargetSettings(frame)
+    end
+end
 local function RefreshPowerWorker(frame)
     if ns.uf and ns.uf.ApplyPowerSettings then
         ns.uf:ApplyPowerSettings(frame)
@@ -121,6 +126,9 @@ function ns:RefreshStatusIcons()
     self:ForEachUnitFrame(RefreshStatusIconWorker)
 end
 
+function ns:RefreshRaidTargets()
+    self:ForEachUnitFrame(RefreshRaidTargetWorker)
+end
 function ns:RefreshPower()
     self:ForEachUnitFrame(RefreshPowerWorker)
 end
@@ -132,6 +140,7 @@ function ns:RefreshAllUnitFrames()
     self:RefreshIndicators()
     self:RefreshCenterDebuff()
     self:RefreshStatusIcons()
+    self:RefreshRaidTargets()
 
     if self.RefreshAllRanges then
         self:RefreshAllRanges()
