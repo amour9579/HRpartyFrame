@@ -447,6 +447,9 @@ local function UpdateSingleFrame(frame)
         ns.uf:UpdateCenterDebuff(frame)
     end
 
+    if ns.uf and ns.uf.UpdateHealAbsorbOverlay then
+        ns.uf:UpdateHealAbsorbOverlay(frame)
+    end
     if ns.uf and ns.uf.UpdateStatusIcons then
         ns.uf:UpdateStatusIcons(frame)
     end
@@ -468,6 +471,9 @@ local function UpdateAuraFrame(frame)
         ns.uf:UpdateCenterDebuff(frame)
     end
 
+    if ns.uf and ns.uf.UpdateHealAbsorbOverlay then
+        ns.uf:UpdateHealAbsorbOverlay(frame)
+    end
     if ns.uf and ns.uf.UpdateBorder then
         ns.uf:UpdateBorder(frame)
     end

@@ -62,6 +62,9 @@ function ns:CreateStyle(frame, unit)
     CreateBackground(frame)
     CreateHealth(frame)
 
+    if ns.uf and ns.uf.CreateHealAbsorbOverlay then
+        ns.uf:CreateHealAbsorbOverlay(frame)
+    end
     if not frame.__isRaidFrame and ns.uf and ns.uf.CreatePower then
         ns.uf:CreatePower(frame)
     end
@@ -86,6 +89,9 @@ function ns:CreateStyle(frame, unit)
         ns.uf:UpdateCenterDebuff(frame)
     end
 
+    if ns.uf and ns.uf.UpdateHealAbsorbOverlay then
+        ns.uf:UpdateHealAbsorbOverlay(frame)
+    end
     if ns.uf and ns.uf.CreateBorder then
         ns.uf:CreateBorder(frame)
     end
