@@ -5,7 +5,6 @@ local anchors = ns.OptionCommon.anchorValues
 function ns:GetDebuffOptionsArgs()
     local args = {}
     local displayModeValues = {
-        blizzard = "블리자드 방식",
         dispellableOnly = "해제 가능한 약화만",
         all = "모든 약화 효과",
     }
@@ -36,9 +35,16 @@ function ns:GetDebuffOptionsArgs()
         order = 1.3,
         values = displayModeValues,
         get = function()
-            return ns:GetPartyConfig().debuff.displayMode or "blizzard"
+            local value = ns:GetPartyConfig().debuff.displayMode
+            if value ~= "dispellableOnly" and value ~= "all" then
+                value = "all"
+            end
+            return value
         end,
         set = function(_, value)
+            if value ~= "dispellableOnly" and value ~= "all" then
+                value = "all"
+            end
             ns:GetPartyConfig().debuff.displayMode = value
             ns:SafeRefresh()
         end,

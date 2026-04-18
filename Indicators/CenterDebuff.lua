@@ -32,9 +32,6 @@ local HIDDEN_UTILITY_DEBUFF_NAMES = {
     ["시간 변위"] = true,
 }
 
-local blizzAuraHooked = false
-local unitToBlizzFrame = {}
-
 local function GetHiddenUtilityDebuffs()
     return HIDDEN_UTILITY_DEBUFFS
 end
@@ -177,77 +174,6 @@ local function ApplyLayout(container, frame, db)
     end
 end
 
-local function ScanBlizzardFrames()
-    for i = 1, 5 do
-        local f = _G["CompactPartyFrameMember" .. i]
-        if f and f.unit then unitToBlizzFrame[f.unit] = f end
-    end
-    for i = 1, 40 do
-        local f = _G["CompactRaidFrame" .. i]
-        if f and f.unit then unitToBlizzFrame[f.unit] = f end
-    end
-end
-
-local function EnsureBlizzardHook()
-    if blizzAuraHooked then return end
-    blizzAuraHooked = true
-
-    if CompactUnitFrame_UpdateAuras then
-        hooksecurefunc("CompactUnitFrame_UpdateAuras", function(frame)
-            if frame and frame.unit then
-                unitToBlizzFrame[frame.unit] = frame
-            end
-        end)
-    end
-    ScanBlizzardFrames()
-end
-
-local function GetBlizzardFrameForUnit(unit)
-    if not unit then return nil end
-    EnsureBlizzardHook()
-
-    local f = unitToBlizzFrame[unit]
-    if f and f.unit == unit then return f end
-
-    ScanBlizzardFrames()
-    f = unitToBlizzFrame[unit]
-    if f and f.unit == unit then return f end
-    return nil
-end
-
-local function GetAurasFromBlizzardFrame(unit, frameKey, maxCount)
-    maxCount = maxCount or MAX_CENTER_DEBUFFS
-    local frame = GetBlizzardFrameForUnit(unit)
-    if not frame then return {} end
-
-    local holder = frame[frameKey]
-    if not holder then return {} end
-
-    local out = {}
-
-    if #holder > 0 then
-        for i = 1, #holder do
-            local auraFrame = holder[i]
-            if auraFrame and auraFrame:IsShown() and auraFrame.auraInstanceID then
-                local data = C_UnitAuras.GetAuraDataByAuraInstanceID(unit, auraFrame.auraInstanceID)
-                if data and data.auraInstanceID and not IsHiddenUtilityAura(data) then
-                    out[#out + 1] = data
-                    if #out >= maxCount then
-                        break
-                    end
-                end
-            end
-        end
-    elseif holder:IsShown() and holder.auraInstanceID then
-        local data = C_UnitAuras.GetAuraDataByAuraInstanceID(unit, holder.auraInstanceID)
-        if data and data.auraInstanceID and not IsHiddenUtilityAura(data) then
-            out[1] = data
-        end
-    end
-
-    return out
-end
-
 local function GetAurasByFilter(unit, filter, maxCount)
     maxCount = maxCount or MAX_CENTER_DEBUFFS
     local out = {}
@@ -277,27 +203,6 @@ local function GetAurasByFilter(unit, filter, maxCount)
     end
 
     return out
-end
-
-local function GetBlizzardDisplayOnlyDispellable(unit)
-    local cvarName = "raidFramesDisplayOnlyDispellableDebuffs"
-    if type(unit) == "string" and unit:match("^party%d+$") then
-        cvarName = "partyFramesDisplayOnlyDispellableDebuffs"
-    end
-
-    if C_CVar and C_CVar.GetCVarBool then
-        local v = C_CVar.GetCVarBool(cvarName)
-        if v ~= nil then return v == true end
-    elseif GetCVarBool then
-        local v = GetCVarBool(cvarName)
-        if v ~= nil then return v == true end
-    end
-
-    local f = GetBlizzardFrameForUnit(unit)
-    if f and f.optionTable and f.optionTable.displayOnlyDispellableDebuffs ~= nil then
-        return f.optionTable.displayOnlyDispellableDebuffs == true
-    end
-    return false
 end
 
 function ns.uf:CreateCenterDebuff(frame)
@@ -422,31 +327,15 @@ function ns.uf:UpdateCenterDebuff(frame)
         return
     end
 
-    local mode = cfg.displayMode or "blizzard"
+    local mode = cfg.displayMode
+    if mode ~= "dispellableOnly" and mode ~= "all" then
+        mode = "all"
+    end
     local auras
     if mode == "dispellableOnly" then
-        auras = GetAurasFromBlizzardFrame(frame.unit, "dispelDebuffFrames", MAX_CENTER_DEBUFFS)
-        if #auras == 0 then
-            auras = GetAurasByFilter(frame.unit, "HARMFUL|RAID_PLAYER_DISPELLABLE", MAX_CENTER_DEBUFFS)
-        end
-    elseif mode == "all" then
-        auras = GetAurasFromBlizzardFrame(frame.unit, "debuffFrames", MAX_CENTER_DEBUFFS)
-        if #auras == 0 then
-            auras = GetAurasByFilter(frame.unit, "HARMFUL", MAX_CENTER_DEBUFFS)
-        end
+        auras = GetAurasByFilter(frame.unit, "HARMFUL|RAID_PLAYER_DISPELLABLE", MAX_CENTER_DEBUFFS)
     else
-        local dispOnly = GetBlizzardDisplayOnlyDispellable(frame.unit)
-        if dispOnly then
-            auras = GetAurasFromBlizzardFrame(frame.unit, "dispelDebuffFrames", MAX_CENTER_DEBUFFS)
-            if #auras == 0 then
-                auras = GetAurasByFilter(frame.unit, "HARMFUL|RAID_PLAYER_DISPELLABLE", MAX_CENTER_DEBUFFS)
-            end
-        else
-            auras = GetAurasFromBlizzardFrame(frame.unit, "debuffFrames", MAX_CENTER_DEBUFFS)
-            if #auras == 0 then
-                auras = GetAurasByFilter(frame.unit, "HARMFUL", MAX_CENTER_DEBUFFS)
-            end
-        end
+        auras = GetAurasByFilter(frame.unit, "HARMFUL", MAX_CENTER_DEBUFFS)
     end
 
     if not auras or #auras == 0 then
