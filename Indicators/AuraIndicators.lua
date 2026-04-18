@@ -161,6 +161,105 @@ local function GetSpellTextureSafe(spellID)
     return 136243
 end
 
+local spellNameCache = {}
+
+local function GetSpellNameSafe(spellID)
+    if not spellID then
+        return nil
+    end
+
+    local cached = spellNameCache[spellID]
+    if cached ~= nil then
+        if cached == false then
+            return nil
+        end
+        return cached
+    end
+
+    local info = GetSpellInfoSafe(spellID)
+    local name = info and info.name
+    if name and name ~= "" then
+        spellNameCache[spellID] = name
+        return name
+    end
+
+    spellNameCache[spellID] = false
+    return nil
+end
+
+local function BuildEntrySpellNamePriority(entry)
+    if not entry then
+        return nil
+    end
+
+    local priority = {}
+    local nextIndex = 1
+
+    local function AddSpellName(spellID)
+        local id = tonumber(spellID)
+        if not id then
+            return
+        end
+
+        local name = GetSpellNameSafe(id)
+        if not name or priority[name] then
+            return
+        end
+
+        priority[name] = nextIndex
+        nextIndex = nextIndex + 1
+    end
+
+    AddSpellName(entry.spellID)
+
+    if type(entry.includeIDs) == "table" then
+        for i = 1, #entry.includeIDs do
+            AddSpellName(entry.includeIDs[i])
+        end
+    end
+
+    if next(priority) == nil then
+        return nil
+    end
+
+    return priority
+end
+
+local function FindHelpfulAuraByNamePriority(unit, namePriority, onlyMine)
+    if not unit or not namePriority then
+        return nil
+    end
+
+    if not C_UnitAuras or not C_UnitAuras.GetUnitAuras then
+        return nil
+    end
+
+    local filter = onlyMine and "HELPFUL|PLAYER" or "HELPFUL"
+    local auras = C_UnitAuras.GetUnitAuras(unit, filter)
+    if type(auras) ~= "table" then
+        return nil
+    end
+
+    local bestAura = nil
+    local bestPriority = math.huge
+
+    for i = 1, #auras do
+        local aura = auras[i]
+        local auraName = aura and aura.name
+        local order = auraName and namePriority[auraName]
+
+        if order and order < bestPriority then
+            bestAura = aura
+            bestPriority = order
+
+            if order == 1 then
+                break
+            end
+        end
+    end
+
+    return bestAura
+end
 local function HideCooldown(button)
     if button and button.cd then
         button.cd:Hide()
@@ -232,112 +331,6 @@ local function UpdateIndicatorCooldown(button, unit, auraInstanceID)
     end
 end
 
---[[local function IsAuraFromPlayer(aura)
-    if not aura then
-        return false
-    end
-
-    if aura.isFromPlayerOrPlayerPet ~= nil then
-        return aura.isFromPlayerOrPlayerPet and true or false
-    end
-
-    return aura.sourceUnit == "player"
-end
-
-local function EntryMatchesSpellID(entry, spellID)
-    if not entry or not spellID then
-        return false
-    end
-
-    if tonumber(entry.spellID) == tonumber(spellID) then
-        return true
-    end
-
-    if type(entry.includeIDs) == "table" then
-        for _, includedID in ipairs(entry.includeIDs) do
-            if tonumber(includedID) == tonumber(spellID) then
-                return true
-            end
-        end
-    end
-
-    return false
-end
-
-
-local function IsBetterAura(candidate, current, entry)
-    if not candidate then
-        return false
-    end
-
-    if not current then
-        return true
-    end
-
-    local onlyMine = entry and entry.onlyMine and true or false
-
-    local candMine = IsAuraFromPlayer(candidate)
-    local currMine = IsAuraFromPlayer(current)
-
-    if onlyMine then
-        if candMine ~= currMine then
-            return candMine
-        end
-    else
-        if candMine ~= currMine then
-            return candMine
-        end
-    end
-
-    local candStacks = candidate.applications or candidate.charges or 0
-    local currStacks = current.applications or current.charges or 0
-    if candStacks ~= currStacks then
-        return candStacks > currStacks
-    end
-
-    local candExp = candidate.expirationTime or 0
-    local currExp = current.expirationTime or 0
-    if candExp ~= currExp then
-        return candExp > currExp
-    end
-
-    local candID = candidate.auraInstanceID or 0
-    local currID = current.auraInstanceID or 0
-    return candID > currID
-end]]
-
-local function GetAuraBySpellID(unit, spellID, onlyMine)
-    if not unit or not spellID then
-        return nil
-    end
-
-    local aura = nil
-
-    if AuraUtil and AuraUtil.FindAuraBySpellID then
-        aura = AuraUtil.FindAuraBySpellID(spellID, unit, "HELPFUL")
-    end
-
-    if not aura and C_UnitAuras and C_UnitAuras.GetUnitAuraBySpellID then
-        aura = C_UnitAuras.GetUnitAuraBySpellID(unit, spellID)
-    end
-
-    if not aura then
-        return nil
-    end
-
-    if onlyMine then
-        local sourceUnit = aura.sourceUnit
-
-        if sourceUnit == "player" or sourceUnit == "pet" or sourceUnit == "vehicle" then
-            return aura
-        end
-
-        return nil
-    end
-
-    return aura
-end
-
 local function FindBestAuraForIndicator(unit, entry, onlyMine)
     if not unit or not entry or not entry.spellID then
         return nil
@@ -347,24 +340,12 @@ local function FindBestAuraForIndicator(unit, entry, onlyMine)
         return nil
     end
 
-    local aura = GetAuraBySpellID(unit, entry.spellID, onlyMine)
-    if aura then
-        return aura
+    local namePriority = BuildEntrySpellNamePriority(entry)
+    if not namePriority then
+        return nil
     end
 
-    if type(entry.includeIDs) == "table" then
-        for i = 1, #entry.includeIDs do
-            local includedID = tonumber(entry.includeIDs[i])
-            if includedID then
-                aura = GetAuraBySpellID(unit, includedID, onlyMine)
-                if aura then
-                    return aura
-                end
-            end
-        end
-    end
-
-    return nil
+    return FindHelpfulAuraByNamePriority(unit, namePriority, onlyMine)
 end
 
 local function ApplyButtonLayout(button, frame, indicator, settings)
