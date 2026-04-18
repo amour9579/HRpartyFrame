@@ -161,51 +161,21 @@ local function GetSpellTextureSafe(spellID)
     return 136243
 end
 
-local spellNameCache = {}
-
-local function GetSpellNameSafe(spellID)
-    if not spellID then
-        return nil
-    end
-
-    local cached = spellNameCache[spellID]
-    if cached ~= nil then
-        if cached == false then
-            return nil
-        end
-        return cached
-    end
-
-    local info = GetSpellInfoSafe(spellID)
-    local name = info and info.name
-    if name and name ~= "" then
-        spellNameCache[spellID] = name
-        return name
-    end
-
-    spellNameCache[spellID] = false
-    return nil
-end
-
 local function FindHelpfulAuraBySpellName(unit, spellName, onlyMine)
     if not unit or not spellName or spellName == "" then
         return nil
     end
 
-    if not AuraUtil or not AuraUtil.FindAuraByName then
+    if not C_UnitAuras or not C_UnitAuras.GetAuraDataBySpellName then
         return nil
     end
 
     if onlyMine then
-        return AuraUtil.FindAuraByName(spellName, unit, "HELPFUL|PLAYER")
-            or AuraUtil.FindAuraByName(spellName, unit, "PLAYER HELPFUL")
-            or AuraUtil.FindAuraByName(spellName, unit, "PLAYER|HELPFUL")
+        return C_UnitAuras.GetAuraDataBySpellName(unit, spellName, "HELPFUL|PLAYER")
     end
 
-    return AuraUtil.FindAuraByName(spellName, unit, "HELPFUL")
+    return C_UnitAuras.GetAuraDataBySpellName(unit, spellName, "HELPFUL")
 end
-
-
 
 local function HideCooldown(button)
     if button and button.cd then
