@@ -187,79 +187,26 @@ local function GetSpellNameSafe(spellID)
     return nil
 end
 
-local function BuildEntrySpellNamePriority(entry)
-    if not entry then
+local function FindHelpfulAuraBySpellName(unit, spellName, onlyMine)
+    if not unit or not spellName or spellName == "" then
         return nil
     end
 
-    local priority = {}
-    local nextIndex = 1
-
-    local function AddSpellName(spellID)
-        local id = tonumber(spellID)
-        if not id then
-            return
-        end
-
-        local name = GetSpellNameSafe(id)
-        if not name or priority[name] then
-            return
-        end
-
-        priority[name] = nextIndex
-        nextIndex = nextIndex + 1
-    end
-
-    AddSpellName(entry.spellID)
-
-    if type(entry.includeIDs) == "table" then
-        for i = 1, #entry.includeIDs do
-            AddSpellName(entry.includeIDs[i])
-        end
-    end
-
-    if next(priority) == nil then
+    if not AuraUtil or not AuraUtil.FindAuraByName then
         return nil
     end
 
-    return priority
+    if onlyMine then
+        return AuraUtil.FindAuraByName(spellName, unit, "HELPFUL|PLAYER")
+            or AuraUtil.FindAuraByName(spellName, unit, "PLAYER HELPFUL")
+            or AuraUtil.FindAuraByName(spellName, unit, "PLAYER|HELPFUL")
+    end
+
+    return AuraUtil.FindAuraByName(spellName, unit, "HELPFUL")
 end
 
-local function FindHelpfulAuraByNamePriority(unit, namePriority, onlyMine)
-    if not unit or not namePriority then
-        return nil
-    end
 
-    if not C_UnitAuras or not C_UnitAuras.GetUnitAuras then
-        return nil
-    end
 
-    local filter = onlyMine and "HELPFUL|PLAYER" or "HELPFUL"
-    local auras = C_UnitAuras.GetUnitAuras(unit, filter)
-    if type(auras) ~= "table" then
-        return nil
-    end
-
-    local bestAura = nil
-    local bestPriority = math.huge
-
-    for i = 1, #auras do
-        local aura = auras[i]
-        local auraName = aura and aura.name
-        local order = auraName and namePriority[auraName]
-
-        if order and order < bestPriority then
-            bestAura = aura
-            bestPriority = order
-
-            if order == 1 then
-                break
-            end
-        end
-    end
-
-    return bestAura
-end
 local function HideCooldown(button)
     if button and button.cd then
         button.cd:Hide()
@@ -340,12 +287,32 @@ local function FindBestAuraForIndicator(unit, entry, onlyMine)
         return nil
     end
 
-    local namePriority = BuildEntrySpellNamePriority(entry)
-    if not namePriority then
-        return nil
+    local info = GetSpellInfoSafe(entry.spellID)
+    local spellName = info and info.name
+    if spellName and spellName ~= "" then
+        local aura = FindHelpfulAuraBySpellName(unit, spellName, onlyMine)
+        if aura then
+            return aura
+        end
     end
 
-    return FindHelpfulAuraByNamePriority(unit, namePriority, onlyMine)
+    if type(entry.includeIDs) == "table" then
+        for i = 1, #entry.includeIDs do
+            local includeID = tonumber(entry.includeIDs[i])
+            if includeID then
+                local includeInfo = GetSpellInfoSafe(includeID)
+                local includeName = includeInfo and includeInfo.name
+                if includeName and includeName ~= "" then
+                    local aura = FindHelpfulAuraBySpellName(unit, includeName, onlyMine)
+                    if aura then
+                        return aura
+                    end
+                end
+            end
+        end
+    end
+
+    return nil
 end
 
 local function ApplyButtonLayout(button, frame, indicator, settings)
