@@ -157,7 +157,7 @@ local defaults = {
             showNone = true,
             showBleed = true,
 
-            showPrivateAuras = true,
+            showPrivateAuras = false,
             privateAuraAnchor = "RIGHT",
         },
 
@@ -367,7 +367,7 @@ local defaults = {
             showNone = true,
             showBleed = true,
 
-            showPrivateAuras = true,
+            showPrivateAuras = false,
             privateAuraAnchor = "RIGHT",
         },
 
