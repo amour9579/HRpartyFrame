@@ -71,6 +71,15 @@ local PREVIEW_ICONS = {
     none = 134430,
 }
 
+-- 전투 중 SetPoint 재배치를 피하기 위해
+-- 슬롯 위치는 미리 고정하고, 표시 개수에 따라 어떤 슬롯을 사용할지만 결정한다.
+local DISPLAY_SLOT_MAP = {
+    [1] = { 3 },
+    [2] = { 2, 4 },
+    [3] = { 2, 3, 4 },
+    [4] = { 1, 2, 4, 5 },
+    [5] = { 1, 2, 3, 4, 5 },
+}
 local function GetCenterDebuffDB()
     local cfg = ns:GetPartyConfig()
     return cfg and cfg.debuff
@@ -204,37 +213,13 @@ local function HideAllSlots(container)
     end
 end
 
-local function AlignVisibleSlots(container)
-    if not (container and container.slots) then return end
-
-    local shown = {}
-    for i = 1, #container.slots do
-        if container.slots[i]:IsShown() then
-            shown[#shown + 1] = container.slots[i]
-        end
-    end
-
-    if #shown == 0 then
-        return
-    end
-
-    local size = shown[1]:GetWidth() or DEFAULT_SIZE
-    local totalWidth = (#shown * size) + ((#shown - 1) * CENTER_DEBUFF_SPACING)
-    local startX = -(totalWidth / 2) + (size / 2)
-
-    for i = 1, #shown do
-        local slot = shown[i]
-        slot:ClearAllPoints()
-        slot:SetPoint("CENTER", container, "CENTER", startX + ((i - 1) * (size + CENTER_DEBUFF_SPACING)), 0)
-    end
-end
-
 local function ApplyLayout(container, frame, db)
     if not (container and frame and db) then return end
 
     local size = tonumber(db.size) or DEFAULT_SIZE
     local thickness = tonumber(db.iconBorderThickness) or 2
     local totalWidth = (size * MAX_CENTER_DEBUFFS) + (CENTER_DEBUFF_SPACING * (MAX_CENTER_DEBUFFS - 1))
+    local centerIndex = (MAX_CENTER_DEBUFFS + 1) / 2
 
     container:ClearAllPoints()
     container:SetPoint(db.anchor or DEFAULT_ANCHOR, frame, db.anchor or DEFAULT_ANCHOR, db.x or 0, db.y or 0)
@@ -242,6 +227,11 @@ local function ApplyLayout(container, frame, db)
 
     for i = 1, #container.slots do
         local slot = container.slots[i]
+        local offsetIndex = i - centerIndex
+        local offsetX = offsetIndex * (size + CENTER_DEBUFF_SPACING)
+
+        slot:ClearAllPoints()
+        slot:SetPoint("CENTER", container, "CENTER", offsetX, 0)
         slot:SetSize(size, size)
 
         if slot.count then
@@ -333,6 +323,7 @@ local function GetAuraRemainingTime(aura)
 
     return math.huge
 end
+
 local function GetPlayerDispelCapabilities()
     local canMagic = false
     local canCurse = false
@@ -520,6 +511,15 @@ local function BuildPreviewTypes(db)
     return out
 end
 
+local function GetDisplaySlotsForCount(count)
+    if count < 1 then
+        return nil
+    end
+    if count > MAX_CENTER_DEBUFFS then
+        count = MAX_CENTER_DEBUFFS
+    end
+    return DISPLAY_SLOT_MAP[count] or DISPLAY_SLOT_MAP[MAX_CENTER_DEBUFFS]
+end
 function ns.uf:CreateCenterDebuff(frame)
     if frame.CenterDebuff then
         return frame.CenterDebuff
@@ -628,16 +628,24 @@ function ns.uf:UpdateCenterDebuffPreview(frame)
     HideAllSlots(container)
 
     local previewTypes = BuildPreviewTypes(db)
+    local shownCount = math.min(#previewTypes, MAX_CENTER_DEBUFFS)
+    local slotIndices = GetDisplaySlotsForCount(shownCount)
     local shown = 0
 
-    for i = 1, math.min(#previewTypes, MAX_CENTER_DEBUFFS) do
-        local typeKey = previewTypes[i]
-        local slot = container.slots[i]
+    if not slotIndices then
+        container:Hide()
+        return
+    end
+
+    for auraIndex = 1, shownCount do
+        local typeKey = previewTypes[auraIndex]
+        local physicalIndex = slotIndices[auraIndex]
+        local slot = physicalIndex and container.slots[physicalIndex]
         if slot then
             local r, g, b, a = GetFallbackTypeColor(typeKey)
             slot.icon:SetTexture(PREVIEW_ICONS[typeKey] or 136243)
             slot.__typeKey = typeKey
-            slot.count:SetText(i == 1 and "3" or "")
+            slot.count:SetText(auraIndex == 1 and "3" or "")
             slot.cd:Hide()
             ShowBorder(slot, r, g, b, a)
             slot:Show()
@@ -646,7 +654,6 @@ function ns.uf:UpdateCenterDebuffPreview(frame)
     end
 
     if shown > 0 then
-        AlignVisibleSlots(container)
         container:Show()
     else
         container:Hide()
@@ -668,8 +675,6 @@ function ns.uf:UpdateCenterDebuff(frame)
         return
     end
 
-    ApplyLayout(container, frame, cfg)
-
     if cfg.preview then
         self:UpdateCenterDebuffPreview(frame)
         return
@@ -681,16 +686,24 @@ function ns.uf:UpdateCenterDebuff(frame)
     end
 
     local auras = BuildDisplayAuraList(frame.unit, cfg)
-    if not auras or #auras == 0 then
+    local shownCount = auras and #auras or 0
+    if shownCount == 0 then
+        container:Hide()
+        return
+    end
+
+    local slotIndices = GetDisplaySlotsForCount(shownCount)
+    if not slotIndices then
         container:Hide()
         return
     end
 
     local shown = 0
 
-    for i = 1, MAX_CENTER_DEBUFFS do
-        local aura = auras[i]
-        local slot = container.slots[i]
+    for auraIndex = 1, shownCount do
+        local aura = auras[auraIndex]
+        local physicalIndex = slotIndices[auraIndex]
+        local slot = physicalIndex and container.slots[physicalIndex]
 
         if aura and slot and aura.auraInstanceID then
             local r, g, b, a = GetAuraBorderColor(frame.unit, aura)
@@ -726,7 +739,6 @@ function ns.uf:UpdateCenterDebuff(frame)
     end
 
     if shown > 0 then
-        AlignVisibleSlots(container)
         container:Show()
     else
         container:Hide()
