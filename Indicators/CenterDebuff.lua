@@ -6,14 +6,16 @@ local DEFAULT_SIZE = 36
 local DEFAULT_ANCHOR = "CENTER"
 local MAX_CENTER_DEBUFFS = 5
 local CENTER_DEBUFF_SPACING = 2
-local AURA_SCAN_LIMIT = 32
 
 local IsSecretValue = issecretvalue or function(...)
     return false
 end
 
-local CanAccessValue = canaccessvalue or function(value)
-    return value == nil or not IsSecretValue(value)
+local function CanAccessValue(value)
+    if canaccessvalue then
+        return canaccessvalue(value)
+    end
+    return not IsSecretValue(value)
 end
 
 local HIDDEN_UTILITY_DEBUFFS = {
@@ -40,7 +42,7 @@ local HIDDEN_UTILITY_DEBUFF_NAMES = {
     ["시간 변위"] = true,
 }
 
--- 필요 시 spellID를 계속 추가
+-- 필요할 때 spellID를 추가해 출혈 분류 정확도를 높이면 됨.
 local BLEED_SPELL_IDS = {
     -- [12345] = true,
 }
@@ -68,42 +70,17 @@ local function GetCenterDebuffDB()
     return cfg and cfg.debuff
 end
 
-local function SafeBoolean(value, default)
-    if value == nil or IsSecretValue(value) then
-        return default == true
-    end
-    if canaccessvalue and not canaccessvalue(value) then
-        return default == true
-    end
-    return value == true
-end
-
 local function SafeNumber(value, default)
-    if value == nil or IsSecretValue(value) then
+    if value == nil or IsSecretValue(value) or not CanAccessValue(value) then
         return default
     end
 
-    if canaccessvalue and not canaccessvalue(value) then
-        return default
-    end
     local n = tonumber(value)
     if n == nil then
         return default
     end
 
     return n
-end
-
-local function SafeValue(value, default)
-    if value == nil or IsSecretValue(value) then
-        return default
-    end
-
-    if canaccessvalue and not canaccessvalue(value) then
-        return default
-    end
-
-    return value
 end
 
 local function IsReadableValue(value)
@@ -115,11 +92,7 @@ local function IsReadableValue(value)
         return false
     end
 
-    if canaccessvalue and not canaccessvalue(value) then
-        return false
-    end
-
-    return true
+    return CanAccessValue(value)
 end
 
 local function NormalizeColor(color)
@@ -184,12 +157,12 @@ local function IsUtilityDebuffFilterEnabled()
     return db.hideUtilityDebuffs == true
 end
 
-local function IsHiddenUtilityAura(data)
+local function IsHiddenUtilityAura(aura)
     if not IsUtilityDebuffFilterEnabled() then
         return false
     end
 
-    local sid = data and data.spellId
+    local sid = aura and aura.spellId
     if sid and not IsSecretValue(sid) then
         local n = tonumber(sid)
         if (n and HIDDEN_UTILITY_DEBUFFS[n] == true)
@@ -199,7 +172,7 @@ local function IsHiddenUtilityAura(data)
         end
     end
 
-    local auraName = data and data.name
+    local auraName = aura and aura.name
     if auraName and not IsSecretValue(auraName) and HIDDEN_UTILITY_DEBUFF_NAMES[auraName] == true then
         return true
     end
@@ -294,6 +267,7 @@ local function AlignVisibleSlots(container)
         slot:SetPoint("CENTER", container, "CENTER", startX + ((i - 1) * (size + CENTER_DEBUFF_SPACING)), 0)
     end
 end
+
 local function ApplyLayout(container, frame, db)
     if not (container and frame and db) then
         return
@@ -512,32 +486,28 @@ local function RefreshAuraByInstanceID(unit, aura)
     return aura
 end
 
-local function AuraPassesFilters(aura, unit, db, fromRaidFilter)
+local function AuraPassesFilters(aura, unit, db)
     if not aura or not aura.auraInstanceID then
-        return false
+        return nil
     end
 
     local refreshed = RefreshAuraByInstanceID(unit, aura)
     if not refreshed or not refreshed.auraInstanceID then
-        return false
+        return nil
     end
 
     if IsHiddenUtilityAura(refreshed) then
-        return false
-    end
-
-    -- old 안정 버전 흐름을 따름:
-    -- onlyDispellable일 때 HARMFUL|RAID 에서 온 aura는
-    -- 추가 커스텀 dispel 판정을 하지 않는다.
-    if db.onlyDispellable and not fromRaidFilter then
-        if not CanPlayerDispelAura(refreshed) then
-            return false
-        end
+        return nil
     end
 
     local typeKey = GetAuraTypeKey(refreshed)
+
+    if db.onlyDispellable and not CanPlayerDispelAura(refreshed) then
+        return nil
+    end
+
     if not IsTypeShownInConfig(db, typeKey) then
-        return false
+        return nil
     end
 
     refreshed.__typeKey = typeKey
@@ -552,35 +522,19 @@ local function CollectDisplayAuras(unit, db, maxCount)
         return out
     end
 
-    if db.onlyDispellable then
-        local slots = { C_UnitAuras.GetAuraSlots(unit, "HARMFUL|RAID", AURA_SCAN_LIMIT) }
-
-        for i = 2, #slots do
-            local slot = slots[i]
-            local aura = C_UnitAuras.GetAuraDataBySlot(unit, slot)
-            local filtered = AuraPassesFilters(aura, unit, db, true)
-            if filtered then
-                out[#out + 1] = filtered
-                if #out >= maxCount then
-                    break
-                end
-            end
+    local index = 1
+    while #out < maxCount do
+        local aura = C_UnitAuras.GetDebuffDataByIndex(unit, index)
+        if not aura or not aura.auraInstanceID then
+            break
         end
-    else
-        local index = 1
-        while #out < maxCount do
-            local aura = C_UnitAuras.GetDebuffDataByIndex(unit, index)
-            if not aura or not aura.auraInstanceID then
-                break
-            end
 
-            local filtered = AuraPassesFilters(aura, unit, db, false)
-            if filtered then
-                out[#out + 1] = filtered
-            end
-
-            index = index + 1
+        local filtered = AuraPassesFilters(aura, unit, db)
+        if filtered then
+            out[#out + 1] = filtered
         end
+
+        index = index + 1
     end
 
     return out
