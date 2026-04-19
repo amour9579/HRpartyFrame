@@ -14,6 +14,7 @@ end
 local CanAccessValue = canaccessvalue or function(value)
     return value == nil or not IsSecretValue(value)
 end
+
 local HIDDEN_UTILITY_DEBUFFS = {
     [57723] = true,  -- Exhaustion
     [57724] = true,  -- Sated
@@ -89,6 +90,7 @@ local function SafeStringKey(value)
 
     return tostring(value)
 end
+
 local function SafeNumber(value, default)
     if not IsSafeLookupValue(value) then
         return default
@@ -196,6 +198,7 @@ local function IsHiddenUtilityAura(aura)
 
     return false
 end
+
 local function HideBorder(slot)
     if not (slot and slot.border) then
         return
