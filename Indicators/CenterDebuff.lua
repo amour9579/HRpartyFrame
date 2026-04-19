@@ -675,6 +675,7 @@ function ns.uf:UpdateCenterDebuff(frame)
         return
     end
 
+    ApplyLayout(container, frame, cfg)
     if cfg.preview then
         self:UpdateCenterDebuffPreview(frame)
         return
