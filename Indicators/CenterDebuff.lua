@@ -293,14 +293,34 @@ end
 
 local function ResolveDisplayIcon(aura)
     if not aura then
-        return nil
+        return 136243
     end
 
     if IsSafeLookupValue(aura.icon) then
         return aura.icon
     end
 
-    return GetSpellTextureSafe(aura.spellId)
+    local spellTex = GetSpellTextureSafe(aura.spellId)
+    if spellTex then
+        return spellTex
+    end
+
+    -- unresolved aura는 전투 중에도 보이도록 placeholder 아이콘 사용
+    return 136243
+end
+
+local function IsAuraUnresolved(aura)
+    if not aura then
+        return true
+    end
+
+    local hasSpellID = IsSafeLookupValue(aura.spellId)
+    local hasName = IsSafeLookupValue(aura.name)
+    local hasDispelName = IsSafeLookupValue(aura.dispelName)
+    local hasDebuffType = IsSafeLookupValue(aura.debuffType)
+    local hasIcon = IsSafeLookupValue(aura.icon)
+
+    return not (hasSpellID or hasName or hasDispelName or hasDebuffType or hasIcon)
 end
 
 local function GetAuraTypeKey(aura)
@@ -446,6 +466,11 @@ local function AuraPassesFilters(aura, db)
         return false, "no_auraInstanceID"
     end
 
+    -- 전투 중 secret/incomplete aura:
+    -- 아직 spellID/name/type/icon이 안 풀린 경우는 필터에서 자르지 않는다.
+    if IsAuraUnresolved(aura) then
+        return true, "unresolved"
+    end
     local typeKey = GetAuraTypeKey(aura)
 
     if not IsTypeShownInConfig(db, typeKey) then
@@ -471,18 +496,37 @@ local function CollectDisplayAuras(unit, db)
         end
 
         scanned = scanned + 1
+
         local data = RefreshAuraByInstanceID(unit, aura.auraInstanceID)
         if data and data.auraInstanceID then
             local ok, reason = AuraPassesFilters(data, db)
             if ok then
-                data.__typeKey = reason
+                if reason == "unresolved" then
+                    data.__typeKey = "none"
+                else
+                    data.__typeKey = reason
+                end
                 accepted[#accepted + 1] = data
-                DebugLog("ACCEPT", unit, "idx", index, "auraID", tostring(data.auraInstanceID), "type",
-                    tostring(data.__typeKey), "spellID", tostring(SafeNumber(data.spellId, "nil")), "name",
-                    SafeString(data.name, "nil"))
+                DebugLog(
+                    "ACCEPT",
+                    unit,
+                    "idx", index,
+                    "auraID", tostring(data.auraInstanceID),
+                    "type", tostring(data.__typeKey),
+                    "spellID", tostring(SafeNumber(data.spellId, "nil")),
+                    "name", SafeString(data.name, "nil"),
+                    reason == "unresolved" and "(unresolved)" or ""
+                )
             else
-                DebugLog("SKIP", unit, "idx", index, "auraID", tostring(data.auraInstanceID), "reason", tostring(reason),
-                    "spellID", tostring(SafeNumber(data.spellId, "nil")), "name", SafeString(data.name, "nil"))
+                DebugLog(
+                    "SKIP",
+                    unit,
+                    "idx", index,
+                    "auraID", tostring(data.auraInstanceID),
+                    "reason", tostring(reason),
+                    "spellID", tostring(SafeNumber(data.spellId, "nil")),
+                    "name", SafeString(data.name, "nil")
+                )
             end
         else
             DebugLog("SKIP", unit, "idx", index, "reason", "refresh_failed", "auraID", tostring(aura.auraInstanceID))
@@ -492,6 +536,7 @@ local function CollectDisplayAuras(unit, db)
     end
 
     DebugLog("SUMMARY", unit, "scanned", scanned, "accepted", #accepted)
+
     return accepted
 end
 
