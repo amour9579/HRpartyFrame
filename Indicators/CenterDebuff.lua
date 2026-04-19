@@ -39,6 +39,14 @@ local PREVIEW_ICONS = {
     none = 134430,
 }
 
+local TYPE_GENERIC_VISUALS = {
+    magic = { kind = "atlas", value = "RaidFrame-Icon-DebuffMagic" },
+    curse = { kind = "atlas", value = "RaidFrame-Icon-DebuffCurse" },
+    disease = { kind = "atlas", value = "RaidFrame-Icon-DebuffDisease" },
+    poison = { kind = "atlas", value = "RaidFrame-Icon-DebuffPoison" },
+    bleed = { kind = "atlas", value = "RaidFrame-Icon-DebuffBleed" },
+    none = { kind = "texture", value = 134430 },
+}
 local function DebugLog(...)
     if not DEBUG_DEBUFF then
         return
@@ -290,6 +298,35 @@ local function GetSpellTextureSafe(spellID)
     return nil
 end
 
+local function GetGenericVisualForType(typeKey)
+    return TYPE_GENERIC_VISUALS[typeKey or "none"] or TYPE_GENERIC_VISUALS.none
+end
+
+local function ResolveEntryVisual(entry)
+    if entry and entry.icon and entry.icon ~= 136243 then
+        return {
+            kind = "texture",
+            value = entry.icon,
+        }
+    end
+
+    return GetGenericVisualForType(entry and entry.typeKey or "none")
+end
+
+local function ApplySlotVisual(slot, visual)
+    if not slot or not slot.icon or not visual then
+        return
+    end
+
+    if visual.kind == "atlas" then
+        slot.icon:SetTexture(nil)
+        slot.icon:SetTexCoord(0, 1, 0, 1)
+        slot.icon:SetAtlas(visual.value)
+    else
+        slot.icon:SetTexture(visual.value)
+        slot.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    end
+end
 local function GetAuraTypeKeyFromReadableFields(aura)
     if not aura then
         return "none"
@@ -785,7 +822,7 @@ function ns.uf:UpdateCenterDebuffPreview(frame)
         local slot = container.slots[i]
         if slot then
             local r, g, b, a = GetFallbackTypeColor(typeKey)
-            slot.icon:SetTexture(PREVIEW_ICONS[typeKey] or 136243)
+            ApplySlotVisual(slot, GetGenericVisualForType(typeKey))
             slot.__typeKey = typeKey
             slot.count:SetText(i == 1 and "3" or "")
             slot.cd:Hide()
@@ -857,10 +894,10 @@ function ns.uf:UpdateCenterDebuff(frame)
         local slot = container.slots[i]
 
         if entry and slot and entry.auraInstanceID then
-            local iconTex = entry.icon or 136243
+            local visual = ResolveEntryVisual(entry)
             local r, g, b, a = GetAuraBorderColor(frame.unit, entry)
 
-            slot.icon:SetTexture(iconTex)
+            ApplySlotVisual(slot, visual)
             slot.auraInstanceID = entry.auraInstanceID
             slot.__typeKey = entry.typeKey or "none"
 
