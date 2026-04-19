@@ -7,17 +7,6 @@ local DEFAULT_ANCHOR = "CENTER"
 local MAX_CENTER_DEBUFFS = 5
 local CENTER_DEBUFF_SPACING = 2
 
-local IsSecretValue = issecretvalue or function(...)
-    return false
-end
-
-local function CanAccessValue(value)
-    if canaccessvalue then
-        return canaccessvalue(value)
-    end
-    return not IsSecretValue(value)
-end
-
 local HIDDEN_UTILITY_DEBUFFS = {
     [57723] = true,  -- Exhaustion
     [57724] = true,  -- Sated
@@ -42,7 +31,7 @@ local HIDDEN_UTILITY_DEBUFF_NAMES = {
     ["시간 변위"] = true,
 }
 
--- 필요할 때 spellID를 추가해 출혈 분류 정확도를 높이면 됨.
+-- 필요 시 spellID 추가
 local BLEED_SPELL_IDS = {
     -- [12345] = true,
 }
@@ -68,116 +57,6 @@ local PREVIEW_ICONS = {
 local function GetCenterDebuffDB()
     local cfg = ns:GetPartyConfig()
     return cfg and cfg.debuff
-end
-
-local function SafeNumber(value, default)
-    if value == nil or IsSecretValue(value) or not CanAccessValue(value) then
-        return default
-    end
-
-    local n = tonumber(value)
-    if n == nil then
-        return default
-    end
-
-    return n
-end
-
-local function IsReadableValue(value)
-    if value == nil then
-        return false
-    end
-
-    if IsSecretValue(value) then
-        return false
-    end
-
-    return CanAccessValue(value)
-end
-
-local function NormalizeColor(color)
-    if type(color) ~= "table" then
-        return nil
-    end
-
-    if color.GetRGBA then
-        local r, g, b, a = color:GetRGBA()
-        if r and g and b then
-            return r, g, b, a or 1
-        end
-    end
-
-    local r = color.r or color[1]
-    local g = color.g or color[2]
-    local b = color.b or color[3]
-    local a = color.a or color[4] or 1
-    if r and g and b then
-        return r, g, b, a
-    end
-
-    return nil
-end
-
-local function GetFallbackTypeColor(typeKey)
-    local color
-
-    if typeKey == "magic" then
-        color = DEBUFF_TYPE_MAGIC_COLOR or (DebuffTypeColor and DebuffTypeColor.Magic)
-    elseif typeKey == "curse" then
-        color = DEBUFF_TYPE_CURSE_COLOR or (DebuffTypeColor and DebuffTypeColor.Curse)
-    elseif typeKey == "disease" then
-        color = DEBUFF_TYPE_DISEASE_COLOR or (DebuffTypeColor and DebuffTypeColor.Disease)
-    elseif typeKey == "poison" then
-        color = DEBUFF_TYPE_POISON_COLOR or (DebuffTypeColor and DebuffTypeColor.Poison)
-    elseif typeKey == "bleed" then
-        color = DEBUFF_TYPE_BLEED_COLOR or (DebuffTypeColor and DebuffTypeColor.Bleed)
-    else
-        color = DEBUFF_TYPE_NONE_COLOR
-    end
-
-    local r, g, b, a = NormalizeColor(color)
-    if r and g and b then
-        return r, g, b, a
-    end
-
-    if typeKey == "none" then
-        return 0.65, 0.65, 0.65, 1
-    elseif typeKey == "bleed" then
-        return 0.78, 0.25, 0.25, 1
-    end
-
-    return 1, 1, 1, 1
-end
-
-local function IsUtilityDebuffFilterEnabled()
-    local db = GetCenterDebuffDB()
-    if not db or db.hideUtilityDebuffs == nil then
-        return true
-    end
-    return db.hideUtilityDebuffs == true
-end
-
-local function IsHiddenUtilityAura(aura)
-    if not IsUtilityDebuffFilterEnabled() then
-        return false
-    end
-
-    local sid = aura and aura.spellId
-    if sid and not IsSecretValue(sid) then
-        local n = tonumber(sid)
-        if (n and HIDDEN_UTILITY_DEBUFFS[n] == true)
-            or HIDDEN_UTILITY_DEBUFFS[sid] == true
-            or HIDDEN_UTILITY_DEBUFFS[tostring(sid)] == true then
-            return true
-        end
-    end
-
-    local auraName = aura and aura.name
-    if auraName and not IsSecretValue(auraName) and HIDDEN_UTILITY_DEBUFF_NAMES[auraName] == true then
-        return true
-    end
-
-    return false
 end
 
 local function HideBorder(slot)
@@ -312,34 +191,18 @@ local function ApplyLayout(container, frame, db)
 end
 
 local function GetSpellTextureSafe(spellID)
-    local id = SafeNumber(spellID, nil)
-    if not id then
+    if not spellID then
+        return nil
+    end
+
+    spellID = tonumber(spellID)
+    if not spellID then
         return nil
     end
 
     if C_Spell and C_Spell.GetSpellInfo then
-        local info = C_Spell.GetSpellInfo(id)
-        local iconID = info and info.iconID
-        if IsReadableValue(iconID) then
-            return iconID
-        end
-    end
-
-    return nil
-end
-
-local function ResolveAuraIcon(aura)
-    if not aura then
-        return nil
-    end
-
-    if IsReadableValue(aura.icon) then
-        return aura.icon
-    end
-
-    local spellID = SafeNumber(aura.spellId, nil)
-    if spellID then
-        return GetSpellTextureSafe(spellID)
+        local info = C_Spell.GetSpellInfo(spellID)
+        return info and info.iconID or nil
     end
 
     return nil
@@ -350,18 +213,12 @@ local function GetAuraTypeKey(aura)
         return "none"
     end
 
-    local spellId = SafeNumber(aura.spellId, nil)
+    local spellId = tonumber(aura.spellId)
     if spellId and BLEED_SPELL_IDS[spellId] then
         return "bleed"
     end
 
-    local dispelName = nil
-    if IsReadableValue(aura.dispelName) then
-        dispelName = aura.dispelName
-    elseif IsReadableValue(aura.debuffType) then
-        dispelName = aura.debuffType
-    end
-
+    local dispelName = aura.dispelName or aura.debuffType
     if not dispelName then
         return "none"
     end
@@ -399,6 +256,32 @@ local function IsTypeShownInConfig(db, typeKey)
     return db.showNone ~= false
 end
 
+local function IsHiddenUtilityAura(aura)
+    if not aura then
+        return false
+    end
+
+    local db = GetCenterDebuffDB()
+    if not db or db.hideUtilityDebuffs == nil then
+        db = { hideUtilityDebuffs = true }
+    end
+
+    if db.hideUtilityDebuffs ~= true then
+        return false
+    end
+
+    local spellId = tonumber(aura.spellId)
+    if spellId and HIDDEN_UTILITY_DEBUFFS[spellId] then
+        return true
+    end
+
+    local name = aura.name
+    if name and HIDDEN_UTILITY_DEBUFF_NAMES[name] then
+        return true
+    end
+
+    return false
+end
 local function GetPlayerDispelCapabilities()
     local canMagic = false
     local canCurse = false
@@ -458,7 +341,7 @@ local function CanPlayerDispelAura(aura)
         return false
     end
 
-    if IsReadableValue(aura.canActivePlayerDispel) then
+    if aura.canActivePlayerDispel ~= nil then
         return aura.canActivePlayerDispel == true
     end
 
@@ -471,73 +354,60 @@ local function CanPlayerDispelAura(aura)
     return caps[typeKey] == true
 end
 
-local function RefreshAuraByInstanceID(unit, aura)
-    if not unit or not aura or not aura.auraInstanceID then
+local function RefreshAuraByInstanceID(unit, auraInstanceID)
+    if not unit or not auraInstanceID then
         return nil
     end
 
     if C_UnitAuras and C_UnitAuras.GetAuraDataByAuraInstanceID then
-        local refreshed = C_UnitAuras.GetAuraDataByAuraInstanceID(unit, aura.auraInstanceID)
-        if refreshed and refreshed.auraInstanceID then
-            return refreshed
-        end
+        return C_UnitAuras.GetAuraDataByAuraInstanceID(unit, auraInstanceID)
     end
 
-    return aura
+    return nil
 end
 
-local function AuraPassesFilters(aura, unit, db)
+local function AuraPassesFilters(aura, db)
     if not aura or not aura.auraInstanceID then
-        return nil
+        return false
     end
 
-    local refreshed = RefreshAuraByInstanceID(unit, aura)
-    if not refreshed or not refreshed.auraInstanceID then
-        return nil
+    if IsHiddenUtilityAura(aura) then
+        return false
     end
 
-    if IsHiddenUtilityAura(refreshed) then
-        return nil
-    end
-
-    local typeKey = GetAuraTypeKey(refreshed)
-
-    if db.onlyDispellable and not CanPlayerDispelAura(refreshed) then
-        return nil
-    end
-
+    local typeKey = GetAuraTypeKey(aura)
     if not IsTypeShownInConfig(db, typeKey) then
-        return nil
+        return false
     end
 
-    refreshed.__typeKey = typeKey
-    return refreshed
+    if db.onlyDispellable and not CanPlayerDispelAura(aura) then
+        return false
+    end
+
+    return true
 end
 
-local function CollectDisplayAuras(unit, db, maxCount)
-    local out = {}
-    maxCount = maxCount or MAX_CENTER_DEBUFFS
-
-    if not unit or not UnitExists(unit) then
-        return out
-    end
-
+local function CollectDisplayAuras(unit, db)
+    local accepted = {}
     local index = 1
-    while #out < maxCount do
+    while #accepted < MAX_CENTER_DEBUFFS do
         local aura = C_UnitAuras.GetDebuffDataByIndex(unit, index)
         if not aura or not aura.auraInstanceID then
             break
         end
 
-        local filtered = AuraPassesFilters(aura, unit, db)
-        if filtered then
-            out[#out + 1] = filtered
+        if AuraPassesFilters(aura, db) then
+            local data = RefreshAuraByInstanceID(unit, aura.auraInstanceID)
+            if data and data.auraInstanceID then
+                data.__typeKey = GetAuraTypeKey(data)
+                accepted[#accepted + 1] = data
+            end
         end
 
         index = index + 1
     end
 
-    return out
+    return accepted
 end
 
 local function GetAuraBorderColor(unit, aura)
@@ -577,6 +447,13 @@ local function BuildPreviewTypes(db)
     return out
 end
 
+local function ResolveDisplayIcon(aura)
+    if not aura then
+        return nil
+    end
+
+    return aura.icon or GetSpellTextureSafe(aura.spellId) or 136243
+end
 function ns.uf:CreateCenterDebuff(frame)
     if frame.CenterDebuff then
         return frame.CenterDebuff
@@ -717,6 +594,7 @@ function ns.uf:UpdateCenterDebuff(frame)
     end
 
     local cfg = GetCenterDebuffDB() or {}
+
     if cfg.enabled == false then
         HideAllSlots(container)
         container:Hide()
@@ -736,7 +614,7 @@ function ns.uf:UpdateCenterDebuff(frame)
         return
     end
 
-    local auras = CollectDisplayAuras(frame.unit, cfg, MAX_CENTER_DEBUFFS)
+    local auras = CollectDisplayAuras(frame.unit, cfg)
     if not auras or #auras == 0 then
         container:Hide()
         return
@@ -749,38 +627,32 @@ function ns.uf:UpdateCenterDebuff(frame)
         local slot = container.slots[i]
 
         if aura and slot and aura.auraInstanceID then
-            local iconTex = ResolveAuraIcon(aura)
-            if iconTex then
-                local r, g, b, a = GetAuraBorderColor(frame.unit, aura)
+            local iconTex = ResolveDisplayIcon(aura)
+            local r, g, b, a = GetAuraBorderColor(frame.unit, aura)
 
-                slot.icon:SetTexture(iconTex)
-                slot.auraInstanceID = aura.auraInstanceID
-                slot.__typeKey = aura.__typeKey
+            slot.icon:SetTexture(iconTex)
+            slot.auraInstanceID = aura.auraInstanceID
+            slot.__typeKey = aura.__typeKey
 
-                ShowBorder(slot, r, g, b, a)
+            ShowBorder(slot, r, g, b, a)
 
-                local countText
-                if C_UnitAuras.GetAuraApplicationDisplayCount then
-                    countText = C_UnitAuras.GetAuraApplicationDisplayCount(frame.unit, aura.auraInstanceID, 2, 999)
-                end
-                if not countText then
-                    local applications = SafeNumber(aura.applications, 0)
-                    countText = applications > 1 and applications or ""
-                end
-                slot.count:SetText(countText or "")
-
-                local durationInfo = C_UnitAuras.GetAuraDuration and
-                C_UnitAuras.GetAuraDuration(frame.unit, aura.auraInstanceID)
-                if durationInfo then
-                    slot.cd:SetCooldownFromDurationObject(durationInfo)
-                    slot.cd:Show()
-                else
-                    slot.cd:Hide()
-                end
-
-                slot:Show()
-                shown = shown + 1
+            local countText
+            if C_UnitAuras.GetAuraApplicationDisplayCount then
+                countText = C_UnitAuras.GetAuraApplicationDisplayCount(frame.unit, aura.auraInstanceID, 2, 999)
             end
+            slot.count:SetText(countText or "")
+
+            local durationInfo = C_UnitAuras.GetAuraDuration and
+                C_UnitAuras.GetAuraDuration(frame.unit, aura.auraInstanceID)
+            if durationInfo then
+                slot.cd:SetCooldownFromDurationObject(durationInfo)
+                slot.cd:Show()
+            else
+                slot.cd:Hide()
+            end
+
+            slot:Show()
+            shown = shown + 1
         end
     end
 
