@@ -107,8 +107,15 @@ function ns:AuraResolveCacheBegin(unit)
 end
 
 local function QuantizeColor(r, g, b)
+    if not IsSafeLookupValue(r) or not IsSafeLookupValue(g) or not IsSafeLookupValue(b) then
+        return "secret"
+    end
+
+    r = tonumber(r)
+    g = tonumber(g)
+    b = tonumber(b)
     if not r or not g or not b then
-        return "0:0:0"
+        return "secret"
     end
 
     local function q(v)
