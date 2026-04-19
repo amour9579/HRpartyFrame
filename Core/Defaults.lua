@@ -144,11 +144,21 @@ local defaults = {
             anchor = "CENTER",
             x = 0,
             y = 0,
-            displayMode = "dispellableOnly",
             hideUtilityDebuffs = true,
             preview = false,
             iconBorderThickness = 2,
             frameBorderThickness = 1,
+            onlyDispellable = true,
+
+            showMagic = true,
+            showCurse = true,
+            showDisease = true,
+            showPoison = true,
+            showNone = true,
+            showBleed = true,
+
+            showPrivateAuras = true,
+            privateAuraAnchor = "RIGHT",
         },
 
         statusIcons = {
@@ -340,15 +350,25 @@ local defaults = {
         },
 
         debuff = {
-            size = 22,
+            size = 30,
             anchor = "CENTER",
             x = 0,
             y = 0,
-            displayMode = "dispellableOnly",
             hideUtilityDebuffs = true,
             preview = false,
             iconBorderThickness = 2,
             frameBorderThickness = 1,
+            onlyDispellable = true,
+
+            showMagic = true,
+            showCurse = true,
+            showDisease = true,
+            showPoison = true,
+            showNone = true,
+            showBleed = true,
+
+            showPrivateAuras = true,
+            privateAuraAnchor = "RIGHT",
         },
 
         statusIcons = {
@@ -765,18 +785,6 @@ function ns:GetConfig()
 
         EnsureSharedClassIndicatorLists(HRpartyFrameDB)
 
-        -- 기존 저장값 마이그레이션
-        if HRpartyFrameDB.party and HRpartyFrameDB.party.debuff then
-            if HRpartyFrameDB.party.debuff.displayMode == "blizzard" then
-                HRpartyFrameDB.party.debuff.displayMode = "all"
-            end
-        end
-
-        if HRpartyFrameDB.raid and HRpartyFrameDB.raid.debuff then
-            if HRpartyFrameDB.raid.debuff.displayMode == "blizzard" then
-                HRpartyFrameDB.raid.debuff.displayMode = "dispellableOnly"
-            end
-        end
         configInitialized = true
     end
 
