@@ -41,6 +41,67 @@ local function SafeValue(value, default)
 
     return value
 end
+local CanAccessValue = canaccessvalue or function(value)
+    return value == nil or not IsSecretValue(value)
+end
+
+local function IsReadableValue(value)
+    if value == nil then
+        return false
+    end
+
+    if IsSecretValue(value) then
+        return false
+    end
+
+    if canaccessvalue and not canaccessvalue(value) then
+        return false
+    end
+
+    return true
+end
+
+local function GetSpellTextureSafe(spellID)
+    local id = SafeNumber(spellID, nil)
+    if not id then
+        return nil
+    end
+
+    if C_Spell and C_Spell.GetSpellInfo then
+        local info = C_Spell.GetSpellInfo(id)
+        local iconID = info and info.iconID
+        if IsReadableValue(iconID) then
+            return iconID
+        end
+    end
+
+    return nil
+end
+
+local function ResolveAuraIcon(aura)
+    if not aura then
+        return nil
+    end
+
+    if IsReadableValue(aura.icon) then
+        return aura.icon
+    end
+
+    local spellID = SafeNumber(aura.spellId, nil)
+    if spellID then
+        return GetSpellTextureSafe(spellID)
+    end
+
+    return nil
+end
+
+local function HasRenderableAuraData(aura)
+    if not aura or not aura.auraInstanceID then
+        return false
+    end
+
+    return ResolveAuraIcon(aura) ~= nil
+end
 local HIDDEN_UTILITY_DEBUFFS = {
     [57723] = true,  -- Exhaustion
     [57724] = true,  -- Sated
@@ -293,16 +354,19 @@ local function GetAuraTypeKey(aura)
         return "none"
     end
 
-    local spellId = aura.spellId
-    if spellId and not IsSecretValue(spellId) then
-        local normalizedSpellID = tonumber(spellId) or spellId
-        if BLEED_SPELL_IDS[normalizedSpellID] then
-            return "bleed"
-        end
+    local spellId = SafeNumber(aura.spellId, nil)
+    if spellId and BLEED_SPELL_IDS[spellId] then
+        return "bleed"
     end
 
-    local dispelName = aura.dispelName or aura.debuffType
-    if not dispelName or IsSecretValue(dispelName) then
+    local dispelName = nil
+    if IsReadableValue(aura.dispelName) then
+        dispelName = aura.dispelName
+    elseif IsReadableValue(aura.debuffType) then
+        dispelName = aura.debuffType
+    end
+
+    if not dispelName then
         return "none"
     end
 
@@ -480,7 +544,10 @@ local function BuildDisplayAuraList(unit, db)
 
     for i = 1, #source do
         local aura = source[i]
-        if aura and aura.auraInstanceID and not IsHiddenUtilityAura(aura) then
+        if aura
+            and aura.auraInstanceID
+            and HasRenderableAuraData(aura)
+            and not IsHiddenUtilityAura(aura) then
             local typeKey = GetAuraTypeKey(aura)
 
             if db.onlyDispellable and not CanPlayerDispelAura(aura) then
@@ -737,35 +804,40 @@ function ns.uf:UpdateCenterDebuff(frame)
         local slot = physicalIndex and container.slots[physicalIndex]
 
         if aura and slot and aura.auraInstanceID then
-            local r, g, b, a = GetAuraBorderColor(frame.unit, aura)
+            local iconTex = ResolveAuraIcon(aura)
+            if iconTex then
+                local r, g, b, a = GetAuraBorderColor(frame.unit, aura)
 
-            slot.icon:SetTexture(SafeValue(aura.icon, 136243))
-            slot.auraInstanceID = aura.auraInstanceID
-            slot.__typeKey = aura.__typeKey
+                slot.icon:SetTexture(iconTex)
+                slot.auraInstanceID = aura.auraInstanceID
+                slot.__typeKey = aura.__typeKey
 
-            ShowBorder(slot, r, g, b, a)
+                ShowBorder(slot, r, g, b, a)
 
-            local countText
-            if C_UnitAuras.GetAuraApplicationDisplayCount then
-                countText = C_UnitAuras.GetAuraApplicationDisplayCount(frame.unit, aura.auraInstanceID, 2, 999)
-            end
-            if not countText then
-                local applications = SafeNumber(aura.applications, 0)
-                countText = applications > 1 and applications or ""
-            end
-            slot.count:SetText(countText or "")
+                local countText
+                if C_UnitAuras.GetAuraApplicationDisplayCount then
+                    countText = C_UnitAuras.GetAuraApplicationDisplayCount(frame.unit, aura.auraInstanceID, 2, 999)
+                end
+                if not countText then
+                    local applications = SafeNumber(aura.applications, 0)
+                    countText = applications > 1 and applications or ""
+                end
+                slot.count:SetText(countText or "")
 
-            local durationInfo = C_UnitAuras.GetAuraDuration and
+                local durationInfo = C_UnitAuras.GetAuraDuration and
                 C_UnitAuras.GetAuraDuration(frame.unit, aura.auraInstanceID)
-            if durationInfo then
-                slot.cd:SetCooldownFromDurationObject(durationInfo)
-                slot.cd:Show()
-            else
-                slot.cd:Hide()
-            end
+                if durationInfo then
+                    slot.cd:SetCooldownFromDurationObject(durationInfo)
+                    slot.cd:Show()
+                else
+                    slot.cd:Hide()
+                end
 
-            slot:Show()
-            shown = shown + 1
+                slot:Show()
+                shown = shown + 1
+            else
+                HideSlot(slot)
+            end
         end
     end
 
