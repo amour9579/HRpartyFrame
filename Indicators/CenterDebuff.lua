@@ -528,13 +528,11 @@ local function CollectDisplayAuras(unit, db)
             break
         end
 
-        if AuraPassesFilters(aura, db) then
-            local data = RefreshAuraByInstanceID(unit, aura.auraInstanceID)
-            if data and data.auraInstanceID then
+        local data = RefreshAuraByInstanceID(unit, aura.auraInstanceID)
+        if data and data.auraInstanceID then
+            if AuraPassesFilters(data, db) then
                 data.__typeKey = GetAuraTypeKey(data)
-                if ResolveDisplayIcon(data) then
-                    accepted[#accepted + 1] = data
-                end
+                accepted[#accepted + 1] = data
             end
         end
 
