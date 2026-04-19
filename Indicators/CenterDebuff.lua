@@ -44,6 +44,66 @@ local function DebugLog(...)
     end
     print("|cff33ff99HRpartyFrame Debuff:|r", ...)
 end
+ns.CenterDebuffRetry = ns.CenterDebuffRetry or {
+    pending = {},
+}
+
+local function ClearCenterDebuffRetry(unit)
+    if not unit or not ns.CenterDebuffRetry then
+        return
+    end
+
+    ns.CenterDebuffRetry.pending[unit] = nil
+end
+
+local function RequestCenterDebuffRetry(unit)
+    if not unit then
+        return
+    end
+
+    local pool = ns.CenterDebuffRetry.pending
+    local info = pool[unit]
+
+    if not info then
+        info = {
+            attempts = 0,
+            scheduled = false,
+        }
+        pool[unit] = info
+    end
+
+    if info.scheduled then
+        return
+    end
+
+    if info.attempts >= 8 then
+        return
+    end
+
+    info.attempts = info.attempts + 1
+    info.scheduled = true
+
+    C_Timer.After(0.08, function()
+        local current = pool[unit]
+        if not current then
+            return
+        end
+
+        current.scheduled = false
+
+        if not ns.ForEachUnitFrame then
+            return
+        end
+
+        ns:ForEachUnitFrame(function(frame)
+            if frame and frame.unit == unit and frame:IsShown() then
+                if ns.uf and ns.uf.UpdateCenterDebuff then
+                    ns.uf:UpdateCenterDebuff(frame)
+                end
+            end
+        end)
+    end)
+end
 local function GetCenterDebuffDB()
     local cfg = ns:GetPartyConfig()
     return cfg and cfg.debuff
@@ -706,6 +766,7 @@ function ns.uf:UpdateCenterDebuffPreview(frame)
 
     local previewTypes = BuildPreviewTypes(db)
     local shown = 0
+    local needRetry = false
 
     for i = 1, math.min(#previewTypes, MAX_CENTER_DEBUFFS) do
         local typeKey = previewTypes[i]
@@ -780,6 +841,9 @@ function ns.uf:UpdateCenterDebuff(frame)
 
         if entry and slot and entry.auraInstanceID then
             local iconTex = entry.icon or 136243
+            if entry.resolved ~= true and iconTex == 136243 then
+                needRetry = true
+            end
             local r, g, b, a = GetAuraBorderColor(frame.unit, entry)
 
             slot.icon:SetTexture(iconTex)
@@ -812,8 +876,14 @@ function ns.uf:UpdateCenterDebuff(frame)
         AlignVisibleSlots(container)
         container:Show()
         DebugLog("SHOW", frame.unit, "shown", shown)
+        if needRetry then
+            RequestCenterDebuffRetry(frame.unit)
+        else
+            ClearCenterDebuffRetry(frame.unit)
+        end
     else
         DebugLog("HIDE", frame.unit, "shown_zero_after_render")
         container:Hide()
+        ClearCenterDebuffRetry(frame.unit)
     end
 end
