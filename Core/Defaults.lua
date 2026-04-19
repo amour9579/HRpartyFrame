@@ -148,6 +148,7 @@ local defaults = {
             preview = false,
             iconBorderThickness = 2,
             frameBorderThickness = 1,
+
             onlyDispellable = true,
 
             showMagic = true,
@@ -358,6 +359,7 @@ local defaults = {
             preview = false,
             iconBorderThickness = 2,
             frameBorderThickness = 1,
+
             onlyDispellable = true,
 
             showMagic = true,
