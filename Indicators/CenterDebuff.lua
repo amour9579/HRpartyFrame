@@ -304,6 +304,73 @@ local function GetAuraTypeKey(aura)
     return "none"
 end
 
+local function GetPlayerDispelCapabilities()
+    local canMagic = false
+    local canCurse = false
+    local canDisease = false
+    local canPoison = false
+
+    local _, classTag = UnitClass("player")
+    local specIndex = GetSpecialization and GetSpecialization() or nil
+    local specID = specIndex and GetSpecializationInfo(specIndex) or nil
+
+    if classTag == "PRIEST" then
+        canMagic = true
+        canDisease = true
+    elseif classTag == "PALADIN" then
+        canPoison = true
+        canDisease = true
+        if specID == 65 then -- Holy
+            canMagic = true
+        end
+    elseif classTag == "SHAMAN" then
+        canCurse = true
+        if specID == 264 then -- Restoration
+            canMagic = true
+        end
+    elseif classTag == "DRUID" then
+        canCurse = true
+        canPoison = true
+        if specID == 105 then -- Restoration
+            canMagic = true
+        end
+    elseif classTag == "MONK" then
+        canPoison = true
+        canDisease = true
+        if specID == 270 then -- Mistweaver
+            canMagic = true
+        end
+    elseif classTag == "MAGE" then
+        canCurse = true
+    elseif classTag == "EVOKER" then
+        canPoison = true
+        if specID == 1468 then -- Preservation
+            canCurse = true
+            canMagic = true
+        end
+    end
+
+    return {
+        magic = canMagic,
+        curse = canCurse,
+        disease = canDisease,
+        poison = canPoison,
+    }
+end
+
+local function CanPlayerDispelAura(aura)
+    if not aura then
+        return false
+    end
+
+    local typeKey = GetAuraTypeKey(aura)
+    if typeKey ~= "magic" and typeKey ~= "curse" and typeKey ~= "disease" and typeKey ~= "poison" then
+        return false
+    end
+
+    local caps = GetPlayerDispelCapabilities()
+    return caps[typeKey] == true
+end
 local function IsTypeShownInConfig(db, typeKey)
     if typeKey == "magic" then
         return db.showMagic ~= false
@@ -370,19 +437,6 @@ local function GetAurasByFilter(unit, filter, maxCount)
     maxCount = maxCount or AURA_SCAN_LIMIT
     local out = {}
 
-    if C_UnitAuras.GetUnitAuras then
-        local auras = C_UnitAuras.GetUnitAuras(unit, filter, maxCount)
-        if type(auras) == "table" then
-            for i = 1, math.min(#auras, maxCount) do
-                local aura = auras[i]
-                if aura and aura.auraInstanceID then
-                    out[#out + 1] = aura
-                end
-            end
-        end
-        return out
-    end
-
     local slots = { C_UnitAuras.GetAuraSlots(unit, filter, maxCount) }
     for i = 2, #slots do
         local aura = C_UnitAuras.GetAuraDataBySlot(unit, slots[i])
@@ -398,15 +452,16 @@ local function GetAurasByFilter(unit, filter, maxCount)
 end
 
 local function BuildDisplayAuraList(unit, db)
-    local filter = db.onlyDispellable and "HARMFUL|RAID_PLAYER_DISPELLABLE" or "HARMFUL"
-    local source = GetAurasByFilter(unit, filter, AURA_SCAN_LIMIT)
+    local source = GetAurasByFilter(unit, "HARMFUL", AURA_SCAN_LIMIT)
     local out = {}
 
     for i = 1, #source do
         local aura = source[i]
         if aura and aura.auraInstanceID and not IsHiddenUtilityAura(aura) then
             local typeKey = GetAuraTypeKey(aura)
-            if IsTypeShownInConfig(db, typeKey) then
+            if db.onlyDispellable and not CanPlayerDispelAura(aura) then
+                -- skip
+            elseif IsTypeShownInConfig(db, typeKey) then
                 aura.__typeKey = typeKey
                 aura.__remaining = GetAuraRemainingTime(aura)
                 out[#out + 1] = aura
