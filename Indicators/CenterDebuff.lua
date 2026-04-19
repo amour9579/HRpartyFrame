@@ -15,31 +15,17 @@ local CanAccessValue = canaccessvalue or function(value)
     return value == nil or not IsSecretValue(value)
 end
 
-local HIDDEN_UTILITY_DEBUFFS = {
-    [57723] = true,  -- Exhaustion
-    [57724] = true,  -- Sated
-    [80354] = true,  -- Temporal Displacement
-    [95809] = true,  -- Insanity (hunter pet)
-    [160455] = true, -- Fatigued (hunter pet)
-    [264689] = true, -- Fatigued (hunter pet)
-    [390435] = true, -- Exhaustion
-    [382912] = true,
-}
+-- 디버그 출력
+local DEBUG_DEBUFF = true
 
-local HIDDEN_UTILITY_DEBUFF_NAMES = {
-    ["Exhaustion"] = true,
-    ["Sated"] = true,
-    ["Temporal Displacement"] = true,
-    ["Insanity"] = true,
-    ["Fatigued"] = true,
-    ["피로"] = true,
-    ["소진"] = true,
-    ["탈진"] = true,
-    ["만족함"] = true,
-    ["시간 변위"] = true,
-}
+local function DebugLog(...)
+    if not DEBUG_DEBUFF then
+        return
+    end
+    print("|cff33ff99HRpartyFrame Debuff:|r", ...)
+end
 
--- 필요 시 spellID를 추가해서 출혈 분류 정확도를 높이면 됩니다.
+-- 필요 시 spellID 추가
 local BLEED_SPELL_IDS = {
     -- [12345] = true,
 }
@@ -83,14 +69,6 @@ local function IsSafeLookupValue(value)
     return true
 end
 
-local function SafeStringKey(value)
-    if not IsSafeLookupValue(value) then
-        return nil
-    end
-
-    return tostring(value)
-end
-
 local function SafeNumber(value, default)
     if not IsSafeLookupValue(value) then
         return default
@@ -104,6 +82,13 @@ local function SafeNumber(value, default)
     return n
 end
 
+local function SafeString(value, default)
+    if not IsSafeLookupValue(value) then
+        return default
+    end
+
+    return tostring(value)
+end
 local function NormalizeColor(color)
     if type(color) ~= "table" then
         return nil
@@ -156,47 +141,6 @@ local function GetFallbackTypeColor(typeKey)
     end
 
     return 1, 1, 1, 1
-end
-
-local function IsUtilityDebuffFilterEnabled()
-    local db = GetCenterDebuffDB()
-    if not db or db.hideUtilityDebuffs == nil then
-        return true
-    end
-    return db.hideUtilityDebuffs == true
-end
-
-local function IsHiddenUtilityAura(aura)
-    if not aura then
-        return false
-    end
-
-    if not IsUtilityDebuffFilterEnabled() then
-        return false
-    end
-
-    local rawSpellId = aura.spellId
-    if IsSafeLookupValue(rawSpellId) then
-        local spellId = tonumber(rawSpellId)
-        if spellId and HIDDEN_UTILITY_DEBUFFS[spellId] then
-            return true
-        end
-
-        local spellKey = SafeStringKey(rawSpellId)
-        if spellKey and HIDDEN_UTILITY_DEBUFFS[spellKey] then
-            return true
-        end
-    end
-
-    local name = aura.name
-    if IsSafeLookupValue(name) then
-        local nameKey = SafeStringKey(name)
-        if nameKey and HIDDEN_UTILITY_DEBUFF_NAMES[nameKey] then
-            return true
-        end
-    end
-
-    return false
 end
 
 local function HideBorder(slot)
@@ -499,28 +443,26 @@ end
 
 local function AuraPassesFilters(aura, db)
     if not aura or not aura.auraInstanceID then
-        return false
-    end
-
-    if IsHiddenUtilityAura(aura) then
-        return false
+        return false, "no_auraInstanceID"
     end
 
     local typeKey = GetAuraTypeKey(aura)
+
     if not IsTypeShownInConfig(db, typeKey) then
-        return false
+        return false, "type_filtered:" .. tostring(typeKey)
     end
 
     if db.onlyDispellable and not CanPlayerDispelAura(aura) then
-        return false
+        return false, "not_dispellable"
     end
 
-    return true
+    return true, typeKey
 end
 
 local function CollectDisplayAuras(unit, db)
     local accepted = {}
     local index = 1
+    local scanned = 0
 
     while #accepted < MAX_CENTER_DEBUFFS do
         local aura = C_UnitAuras.GetDebuffDataByIndex(unit, index)
@@ -528,17 +470,28 @@ local function CollectDisplayAuras(unit, db)
             break
         end
 
+        scanned = scanned + 1
         local data = RefreshAuraByInstanceID(unit, aura.auraInstanceID)
         if data and data.auraInstanceID then
-            if AuraPassesFilters(data, db) then
-                data.__typeKey = GetAuraTypeKey(data)
+            local ok, reason = AuraPassesFilters(data, db)
+            if ok then
+                data.__typeKey = reason
                 accepted[#accepted + 1] = data
+                DebugLog("ACCEPT", unit, "idx", index, "auraID", tostring(data.auraInstanceID), "type",
+                    tostring(data.__typeKey), "spellID", tostring(SafeNumber(data.spellId, "nil")), "name",
+                    SafeString(data.name, "nil"))
+            else
+                DebugLog("SKIP", unit, "idx", index, "auraID", tostring(data.auraInstanceID), "reason", tostring(reason),
+                    "spellID", tostring(SafeNumber(data.spellId, "nil")), "name", SafeString(data.name, "nil"))
             end
+        else
+            DebugLog("SKIP", unit, "idx", index, "reason", "refresh_failed", "auraID", tostring(aura.auraInstanceID))
         end
 
         index = index + 1
     end
 
+    DebugLog("SUMMARY", unit, "scanned", scanned, "accepted", #accepted)
     return accepted
 end
 
@@ -735,12 +688,14 @@ function ns.uf:UpdateCenterDebuff(frame)
     end
 
     if not frame.unit or not UnitExists(frame.unit) then
+        DebugLog("HIDE", "invalid_unit", tostring(frame and frame.unit))
         container:Hide()
         return
     end
 
     local auras = CollectDisplayAuras(frame.unit, cfg)
     if not auras or #auras == 0 then
+        DebugLog("HIDE", frame.unit, "no_accepted_auras")
         container:Hide()
         return
     end
@@ -779,6 +734,9 @@ function ns.uf:UpdateCenterDebuff(frame)
 
                 slot:Show()
                 shown = shown + 1
+            else
+                DebugLog("SKIP_RENDER", frame.unit, "idx", i, "reason", "no_icon", "auraID",
+                    tostring(aura.auraInstanceID))
             end
         end
     end
@@ -786,7 +744,9 @@ function ns.uf:UpdateCenterDebuff(frame)
     if shown > 0 then
         AlignVisibleSlots(container)
         container:Show()
+        DebugLog("SHOW", frame.unit, "shown", shown)
     else
+        DebugLog("HIDE", frame.unit, "shown_zero_after_render")
         container:Hide()
     end
 end
