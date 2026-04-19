@@ -46,6 +46,7 @@ UnitFrames\Elements\HealAbsorb.lua
 UnitFrames\Elements\RaidTarget.lua
 
 Indicators\AuraIndicators.lua
+Indicators\CenterDebuffState.lua
 Indicators\CenterDebuff.lua
 Indicators\StatusIcons.lua
 

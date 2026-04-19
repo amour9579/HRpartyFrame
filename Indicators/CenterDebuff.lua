@@ -7,6 +7,7 @@ local DEFAULT_ANCHOR = "CENTER"
 local MAX_CENTER_DEBUFFS = 5
 local CENTER_DEBUFF_SPACING = 2
 
+local DEBUG_DEBUFF = false
 local IsSecretValue = issecretvalue or function(...)
     return false
 end
@@ -15,17 +16,6 @@ local CanAccessValue = canaccessvalue or function(value)
     return value == nil or not IsSecretValue(value)
 end
 
--- 디버그 출력
-local DEBUG_DEBUFF = true
-
-local function DebugLog(...)
-    if not DEBUG_DEBUFF then
-        return
-    end
-    print("|cff33ff99HRpartyFrame Debuff:|r", ...)
-end
-
--- 필요 시 spellID 추가
 local BLEED_SPELL_IDS = {
     -- [12345] = true,
 }
@@ -48,6 +38,12 @@ local PREVIEW_ICONS = {
     none = 134430,
 }
 
+local function DebugLog(...)
+    if not DEBUG_DEBUFF then
+        return
+    end
+    print("|cff33ff99HRpartyFrame Debuff:|r", ...)
+end
 local function GetCenterDebuffDB()
     local cfg = ns:GetPartyConfig()
     return cfg and cfg.debuff
@@ -89,6 +85,7 @@ local function SafeString(value, default)
 
     return tostring(value)
 end
+
 local function NormalizeColor(color)
     if type(color) ~= "table" then
         return nil
@@ -291,36 +288,16 @@ local function GetSpellTextureSafe(spellID)
     return nil
 end
 
-local function ResolveDisplayIcon(aura)
+local function IsAuraResolved(aura)
     if not aura then
-        return 136243
+        return false
     end
 
-    if IsSafeLookupValue(aura.icon) then
-        return aura.icon
-    end
-
-    local spellTex = GetSpellTextureSafe(aura.spellId)
-    if spellTex then
-        return spellTex
-    end
-
-    -- unresolved aura는 전투 중에도 보이도록 placeholder 아이콘 사용
-    return 136243
-end
-
-local function IsAuraUnresolved(aura)
-    if not aura then
-        return true
-    end
-
-    local hasSpellID = IsSafeLookupValue(aura.spellId)
-    local hasName = IsSafeLookupValue(aura.name)
-    local hasDispelName = IsSafeLookupValue(aura.dispelName)
-    local hasDebuffType = IsSafeLookupValue(aura.debuffType)
-    local hasIcon = IsSafeLookupValue(aura.icon)
-
-    return not (hasSpellID or hasName or hasDispelName or hasDebuffType or hasIcon)
+    return IsSafeLookupValue(aura.spellId)
+        or IsSafeLookupValue(aura.name)
+        or IsSafeLookupValue(aura.dispelName)
+        or IsSafeLookupValue(aura.debuffType)
+        or IsSafeLookupValue(aura.icon)
 end
 
 local function GetAuraTypeKey(aura)
@@ -461,17 +438,26 @@ local function RefreshAuraByInstanceID(unit, auraInstanceID)
     return nil
 end
 
-local function AuraPassesFilters(aura, db)
-    if not aura or not aura.auraInstanceID then
-        return false, "no_auraInstanceID"
+local function ResolveDisplayIcon(aura, cachedIcon)
+    if aura and IsSafeLookupValue(aura.icon) then
+        return aura.icon
     end
 
-    -- 전투 중 secret/incomplete aura:
-    -- 아직 spellID/name/type/icon이 안 풀린 경우는 필터에서 자르지 않는다.
-    if IsAuraUnresolved(aura) then
-        return true, "unresolved"
+    local spellTex = aura and GetSpellTextureSafe(aura.spellId) or nil
+    if spellTex then
+        return spellTex
     end
-    local typeKey = GetAuraTypeKey(aura)
+    if cachedIcon then
+        return cachedIcon
+    end
+
+    return 136243
+end
+
+local function ShouldShowResolvedAura(aura, db, typeKey)
+    if not aura then
+        return false, "no_aura"
+    end
 
     if not IsTypeShownInConfig(db, typeKey) then
         return false, "type_filtered:" .. tostring(typeKey)
@@ -481,15 +467,15 @@ local function AuraPassesFilters(aura, db)
         return false, "not_dispellable"
     end
 
-    return true, typeKey
+    return true, "ok"
 end
 
 local function CollectDisplayAuras(unit, db)
-    local accepted = {}
+    ns:CenterDebuffStateBegin(unit)
     local index = 1
     local scanned = 0
 
-    while #accepted < MAX_CENTER_DEBUFFS do
+    while true do
         local aura = C_UnitAuras.GetDebuffDataByIndex(unit, index)
         if not aura or not aura.auraInstanceID then
             break
@@ -499,34 +485,52 @@ local function CollectDisplayAuras(unit, db)
 
         local data = RefreshAuraByInstanceID(unit, aura.auraInstanceID)
         if data and data.auraInstanceID then
-            local ok, reason = AuraPassesFilters(data, db)
-            if ok then
-                if reason == "unresolved" then
-                    data.__typeKey = "none"
-                else
-                    data.__typeKey = reason
-                end
-                accepted[#accepted + 1] = data
-                DebugLog(
-                    "ACCEPT",
-                    unit,
-                    "idx", index,
-                    "auraID", tostring(data.auraInstanceID),
-                    "type", tostring(data.__typeKey),
-                    "spellID", tostring(SafeNumber(data.spellId, "nil")),
-                    "name", SafeString(data.name, "nil"),
-                    reason == "unresolved" and "(unresolved)" or ""
-                )
+            local resolved = IsAuraResolved(data)
+            local typeKey = resolved and GetAuraTypeKey(data) or "none"
+            local filterPass = false
+            local pendingVisible = false
+            local reason = "unresolved"
+
+            if resolved then
+                filterPass, reason = ShouldShowResolvedAura(data, db, typeKey)
             else
-                DebugLog(
-                    "SKIP",
-                    unit,
-                    "idx", index,
-                    "auraID", tostring(data.auraInstanceID),
-                    "reason", tostring(reason),
-                    "spellID", tostring(SafeNumber(data.spellId, "nil")),
-                    "name", SafeString(data.name, "nil")
-                )
+                pendingVisible = InCombatLockdown() and true or false
+            end
+
+            local icon = ResolveDisplayIcon(data, nil)
+
+            local entry = ns:CenterDebuffStateTrack(unit, {
+                auraInstanceID = data.auraInstanceID,
+                aura = data,
+                resolved = resolved,
+                typeKey = typeKey,
+                icon = icon,
+                filterPass = filterPass,
+                pendingVisible = pendingVisible,
+                displayName = SafeString(data.name, "nil"),
+                spellId = SafeNumber(data.spellId, nil),
+            })
+
+            if entry then
+                if resolved then
+                    if filterPass then
+                        DebugLog("ACCEPT", unit, "idx", index, "auraID", tostring(data.auraInstanceID), "type",
+                            tostring(typeKey), "spellID", tostring(entry.spellId or "nil"), "name",
+                            tostring(entry.displayName or "nil"))
+                    else
+                        DebugLog("SKIP", unit, "idx", index, "auraID", tostring(data.auraInstanceID), "reason",
+                            tostring(reason), "spellID", tostring(entry.spellId or "nil"), "name",
+                            tostring(entry.displayName or "nil"))
+                    end
+                else
+                    if pendingVisible then
+                        DebugLog("ACCEPT", unit, "idx", index, "auraID", tostring(data.auraInstanceID), "type", "none",
+                            "spellID", "nil", "name", "nil", "(unresolved)")
+                    else
+                        DebugLog("SKIP", unit, "idx", index, "auraID", tostring(data.auraInstanceID), "reason",
+                            "unresolved_out_of_combat")
+                    end
+                end
             end
         else
             DebugLog("SKIP", unit, "idx", index, "reason", "refresh_failed", "auraID", tostring(aura.auraInstanceID))
@@ -535,18 +539,20 @@ local function CollectDisplayAuras(unit, db)
         index = index + 1
     end
 
+    local accepted = ns:CenterDebuffStateCollect(unit, MAX_CENTER_DEBUFFS)
     DebugLog("SUMMARY", unit, "scanned", scanned, "accepted", #accepted)
 
     return accepted
 end
 
-local function GetAuraBorderColor(unit, aura)
-    if not aura then
+local function GetAuraBorderColor(unit, entry)
+    if not entry then
         return nil
     end
 
+    local aura = entry.aura
     local r, g, b, a
-    if aura.auraInstanceID and ns.GetAuraDispelColor then
+    if aura and aura.auraInstanceID and ns.GetAuraDispelColor then
         r, g, b, a = ns:GetAuraDispelColor(unit, aura.auraInstanceID)
     end
 
@@ -554,7 +560,7 @@ local function GetAuraBorderColor(unit, aura)
         return r, g, b, a
     end
 
-    return GetFallbackTypeColor(aura.__typeKey or GetAuraTypeKey(aura))
+    return GetFallbackTypeColor(entry.typeKey or "none")
 end
 
 local function BuildPreviewTypes(db)
@@ -583,15 +589,24 @@ function ns.uf:CreateCenterDebuff(frame)
     end
 
     local container = CreateFrame("Frame", nil, frame)
-    container:SetFrameLevel(frame:GetFrameLevel() + 20)
+    container:SetFrameStrata("TOOLTIP")
+    container:SetFrameLevel((frame:GetFrameLevel() or 1) + 200)
+    if container.SetIgnoreParentAlpha then
+        container:SetIgnoreParentAlpha(true)
+    end
     container:SetSize(DEFAULT_SIZE, DEFAULT_SIZE)
     container:SetPoint("CENTER", frame, "CENTER", 0, 0)
+    container:EnableMouse(false)
     container:Hide()
     container.slots = {}
 
     for i = 1, MAX_CENTER_DEBUFFS do
         local slot = CreateFrame("Frame", nil, container)
-        slot:SetFrameLevel(container:GetFrameLevel())
+        slot:SetFrameStrata(container:GetFrameStrata())
+        slot:SetFrameLevel(container:GetFrameLevel() + i)
+        if slot.SetIgnoreParentAlpha then
+            slot:SetIgnoreParentAlpha(true)
+        end
         slot:SetSize(DEFAULT_SIZE, DEFAULT_SIZE)
         slot:EnableMouse(true)
         slot.border = {}
@@ -606,7 +621,7 @@ function ns.uf:CreateCenterDebuff(frame)
             tex:Hide()
         end
 
-        slot.icon = slot:CreateTexture(nil, "ARTWORK")
+        slot.icon = slot:CreateTexture(nil, "OVERLAY", nil, 1)
         slot.icon:SetAllPoints()
         slot.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
@@ -615,6 +630,11 @@ function ns.uf:CreateCenterDebuff(frame)
         slot.count:SetText("")
 
         slot.cd = CreateFrame("Cooldown", nil, slot, "CooldownFrameTemplate")
+        slot.cd:SetFrameStrata(slot:GetFrameStrata())
+        slot.cd:SetFrameLevel(slot:GetFrameLevel() + 1)
+        if cd and cd.SetIgnoreParentAlpha then
+            cd:SetIgnoreParentAlpha(true)
+        end
         slot.cd:SetAllPoints()
         slot.cd:SetReverse(true)
         slot.cd:SetDrawEdge(false)
@@ -716,6 +736,12 @@ function ns.uf:UpdateCenterDebuff(frame)
         return
     end
 
+    container:SetFrameStrata("TOOLTIP")
+    container:SetFrameLevel((frame:GetFrameLevel() or 1) + 200)
+    if container.SetIgnoreParentAlpha then
+        container:SetIgnoreParentAlpha(true)
+    end
+    container:SetAlpha(1)
     local cfg = GetCenterDebuffDB() or {}
 
     if cfg.enabled == false then
@@ -735,11 +761,12 @@ function ns.uf:UpdateCenterDebuff(frame)
     if not frame.unit or not UnitExists(frame.unit) then
         DebugLog("HIDE", "invalid_unit", tostring(frame and frame.unit))
         container:Hide()
+        ns:CenterDebuffStateReset(frame and frame.unit)
         return
     end
 
-    local auras = CollectDisplayAuras(frame.unit, cfg)
-    if not auras or #auras == 0 then
+    local entries = CollectDisplayAuras(frame.unit, cfg)
+    if not entries or #entries == 0 then
         DebugLog("HIDE", frame.unit, "no_accepted_auras")
         container:Hide()
         return
@@ -747,42 +774,37 @@ function ns.uf:UpdateCenterDebuff(frame)
 
     local shown = 0
 
-    for i = 1, math.min(#auras, MAX_CENTER_DEBUFFS) do
-        local aura = auras[i]
+    for i = 1, math.min(#entries, MAX_CENTER_DEBUFFS) do
+        local entry = entries[i]
         local slot = container.slots[i]
 
-        if aura and slot and aura.auraInstanceID then
-            local iconTex = ResolveDisplayIcon(aura)
-            if iconTex then
-                local r, g, b, a = GetAuraBorderColor(frame.unit, aura)
+        if entry and slot and entry.auraInstanceID then
+            local iconTex = entry.icon or 136243
+            local r, g, b, a = GetAuraBorderColor(frame.unit, entry)
 
-                slot.icon:SetTexture(iconTex)
-                slot.auraInstanceID = aura.auraInstanceID
-                slot.__typeKey = aura.__typeKey
+            slot.icon:SetTexture(iconTex)
+            slot.auraInstanceID = entry.auraInstanceID
+            slot.__typeKey = entry.typeKey or "none"
 
-                ShowBorder(slot, r, g, b, a)
+            ShowBorder(slot, r, g, b, a)
 
-                local countText
-                if C_UnitAuras.GetAuraApplicationDisplayCount then
-                    countText = C_UnitAuras.GetAuraApplicationDisplayCount(frame.unit, aura.auraInstanceID, 2, 999)
-                end
-                slot.count:SetText(countText or "")
-
-                local durationInfo = C_UnitAuras.GetAuraDuration and
-                C_UnitAuras.GetAuraDuration(frame.unit, aura.auraInstanceID)
-                if durationInfo then
-                    slot.cd:SetCooldownFromDurationObject(durationInfo)
-                    slot.cd:Show()
-                else
-                    slot.cd:Hide()
-                end
-
-                slot:Show()
-                shown = shown + 1
-            else
-                DebugLog("SKIP_RENDER", frame.unit, "idx", i, "reason", "no_icon", "auraID",
-                    tostring(aura.auraInstanceID))
+            local countText
+            if C_UnitAuras.GetAuraApplicationDisplayCount then
+                countText = C_UnitAuras.GetAuraApplicationDisplayCount(frame.unit, entry.auraInstanceID, 2, 999)
             end
+            slot.count:SetText(countText or "")
+
+            local durationInfo = C_UnitAuras.GetAuraDuration and
+                C_UnitAuras.GetAuraDuration(frame.unit, entry.auraInstanceID)
+            if durationInfo then
+                slot.cd:SetCooldownFromDurationObject(durationInfo)
+                slot.cd:Show()
+            else
+                slot.cd:Hide()
+            end
+
+            slot:Show()
+            shown = shown + 1
         end
     end
 
