@@ -59,6 +59,29 @@ local function GetCenterDebuffDB()
     return cfg and cfg.debuff
 end
 
+local function IsSafeLookupValue(value)
+    if value == nil then
+        return false
+    end
+
+    if IsSecretValue(value) then
+        return false
+    end
+
+    if canaccessvalue and not canaccessvalue(value) then
+        return false
+    end
+
+    return true
+end
+
+local function SafeStringKey(value)
+    if not IsSafeLookupValue(value) then
+        return nil
+    end
+
+    return tostring(value)
+end
 local function HideBorder(slot)
     if not (slot and slot.border) then
         return
@@ -213,12 +236,20 @@ local function GetAuraTypeKey(aura)
         return "none"
     end
 
-    local spellId = tonumber(aura.spellId)
+    local spellId = nil
+    if IsSafeLookupValue(aura.spellId) then
+        spellId = tonumber(aura.spellId)
+    end
     if spellId and BLEED_SPELL_IDS[spellId] then
         return "bleed"
     end
 
-    local dispelName = aura.dispelName or aura.debuffType
+    local dispelName = nil
+    if IsSafeLookupValue(aura.dispelName) then
+        dispelName = aura.dispelName
+    elseif IsSafeLookupValue(aura.debuffType) then
+        dispelName = aura.debuffType
+    end
     if not dispelName then
         return "none"
     end
@@ -270,18 +301,29 @@ local function IsHiddenUtilityAura(aura)
         return false
     end
 
-    local spellId = tonumber(aura.spellId)
-    if spellId and HIDDEN_UTILITY_DEBUFFS[spellId] then
-        return true
-    end
+    local rawSpellId = aura.spellId
+    if IsSafeLookupValue(rawSpellId) then
+        local spellId = tonumber(rawSpellId)
+        if spellId and HIDDEN_UTILITY_DEBUFFS[spellId] then
+            return true
+        end
 
+        local spellKey = SafeStringKey(rawSpellId)
+        if spellKey and HIDDEN_UTILITY_DEBUFFS[spellKey] then
+            return true
+        end
+    end
     local name = aura.name
-    if name and HIDDEN_UTILITY_DEBUFF_NAMES[name] then
-        return true
+    if IsSafeLookupValue(name) then
+        local nameKey = SafeStringKey(name)
+        if nameKey and HIDDEN_UTILITY_DEBUFF_NAMES[nameKey] then
+            return true
+        end
     end
 
     return false
 end
+
 local function GetPlayerDispelCapabilities()
     local canMagic = false
     local canCurse = false
@@ -341,7 +383,7 @@ local function CanPlayerDispelAura(aura)
         return false
     end
 
-    if aura.canActivePlayerDispel ~= nil then
+    if IsSafeLookupValue(aura.canActivePlayerDispel) then
         return aura.canActivePlayerDispel == true
     end
 
@@ -449,10 +491,19 @@ end
 
 local function ResolveDisplayIcon(aura)
     if not aura then
-        return nil
+        return 136243
     end
 
-    return aura.icon or GetSpellTextureSafe(aura.spellId) or 136243
+    if IsSafeLookupValue(aura.icon) then
+        return aura.icon
+    end
+
+    local spellId = nil
+    if IsSafeLookupValue(aura.spellId) then
+        spellId = aura.spellId
+    end
+
+    return GetSpellTextureSafe(spellId) or 136243
 end
 function ns.uf:CreateCenterDebuff(frame)
     if frame.CenterDebuff then
