@@ -13,6 +13,34 @@ local IsSecretValue = issecretvalue or function(...)
     return false
 end
 
+local function SafeBoolean(value, default)
+    if value == nil or IsSecretValue(value) then
+        return default == true
+    end
+
+    return value == true
+end
+
+local function SafeNumber(value, default)
+    if value == nil or IsSecretValue(value) then
+        return default
+    end
+
+    local n = tonumber(value)
+    if n == nil then
+        return default
+    end
+
+    return n
+end
+
+local function SafeValue(value, default)
+    if value == nil or IsSecretValue(value) then
+        return default
+    end
+
+    return value
+end
 local HIDDEN_UTILITY_DEBUFFS = {
     [57723] = true,  -- Exhaustion
     [57724] = true,  -- Sated
@@ -393,37 +421,39 @@ local function CanPlayerDispelAura(aura)
 end
 
 local function CompareAuras(a, b)
-    local aBoss = a.isBossAura and 0 or 1
-    local bBoss = b.isBossAura and 0 or 1
+    local aBoss = SafeBoolean(a and a.isBossAura, false) and 0 or 1
+    local bBoss = SafeBoolean(b and b.isBossAura, false) and 0 or 1
     if aBoss ~= bBoss then
         return aBoss < bBoss
     end
 
-    local aType = TYPE_PRIORITY[a.__typeKey] or 99
-    local bType = TYPE_PRIORITY[b.__typeKey] or 99
+    local aType = TYPE_PRIORITY[a and a.__typeKey] or 99
+    local bType = TYPE_PRIORITY[b and b.__typeKey] or 99
     if aType ~= bType then
         return aType < bType
     end
 
-    local aRemaining = a.__remaining or math.huge
-    local bRemaining = b.__remaining or math.huge
+    local aRemaining = SafeNumber(a and a.__remaining, math.huge)
+    local bRemaining = SafeNumber(b and b.__remaining, math.huge)
     if aRemaining ~= bRemaining then
         return aRemaining < bRemaining
     end
 
-    local aCount = tonumber(a.applications) or 0
-    local bCount = tonumber(b.applications) or 0
+    local aCount = SafeNumber(a and a.applications, 0)
+    local bCount = SafeNumber(b and b.applications, 0)
     if aCount ~= bCount then
         return aCount > bCount
     end
 
-    local aSpell = tonumber(a.spellId) or 0
-    local bSpell = tonumber(b.spellId) or 0
+    local aSpell = SafeNumber(a and a.spellId, 0)
+    local bSpell = SafeNumber(b and b.spellId, 0)
     if aSpell ~= bSpell then
         return aSpell < bSpell
     end
 
-    return (tonumber(a.auraInstanceID) or 0) < (tonumber(b.auraInstanceID) or 0)
+    local aAuraID = SafeNumber(a and a.auraInstanceID, 0)
+    local bAuraID = SafeNumber(b and b.auraInstanceID, 0)
+    return aAuraID < bAuraID
 end
 
 local function GetAurasByFilter(unit, filter, maxCount)
@@ -709,7 +739,7 @@ function ns.uf:UpdateCenterDebuff(frame)
         if aura and slot and aura.auraInstanceID then
             local r, g, b, a = GetAuraBorderColor(frame.unit, aura)
 
-            slot.icon:SetTexture(aura.icon or 136243)
+            slot.icon:SetTexture(SafeValue(aura.icon, 136243))
             slot.auraInstanceID = aura.auraInstanceID
             slot.__typeKey = aura.__typeKey
 
@@ -720,7 +750,7 @@ function ns.uf:UpdateCenterDebuff(frame)
                 countText = C_UnitAuras.GetAuraApplicationDisplayCount(frame.unit, aura.auraInstanceID, 2, 999)
             end
             if not countText then
-                local applications = tonumber(aura.applications) or 0
+                local applications = SafeNumber(aura.applications, 0)
                 countText = applications > 1 and applications or ""
             end
             slot.count:SetText(countText or "")
