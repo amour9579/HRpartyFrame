@@ -512,7 +512,7 @@ local function RefreshAuraByInstanceID(unit, aura)
     return aura
 end
 
-local function AuraPassesFilters(aura, unit, db)
+local function AuraPassesFilters(aura, unit, db, fromRaidFilter)
     if not aura or not aura.auraInstanceID then
         return false
     end
@@ -526,12 +526,13 @@ local function AuraPassesFilters(aura, unit, db)
         return false
     end
 
-    if not ResolveAuraIcon(refreshed) then
-        return false
-    end
-
-    if db.onlyDispellable and not CanPlayerDispelAura(refreshed) then
-        return false
+    -- old 안정 버전 흐름을 따름:
+    -- onlyDispellable일 때 HARMFUL|RAID 에서 온 aura는
+    -- 추가 커스텀 dispel 판정을 하지 않는다.
+    if db.onlyDispellable and not fromRaidFilter then
+        if not CanPlayerDispelAura(refreshed) then
+            return false
+        end
     end
 
     local typeKey = GetAuraTypeKey(refreshed)
@@ -553,10 +554,11 @@ local function CollectDisplayAuras(unit, db, maxCount)
 
     if db.onlyDispellable then
         local slots = { C_UnitAuras.GetAuraSlots(unit, "HARMFUL|RAID", AURA_SCAN_LIMIT) }
+
         for i = 2, #slots do
             local slot = slots[i]
             local aura = C_UnitAuras.GetAuraDataBySlot(unit, slot)
-            local filtered = AuraPassesFilters(aura, unit, db)
+            local filtered = AuraPassesFilters(aura, unit, db, true)
             if filtered then
                 out[#out + 1] = filtered
                 if #out >= maxCount then
@@ -572,7 +574,7 @@ local function CollectDisplayAuras(unit, db, maxCount)
                 break
             end
 
-            local filtered = AuraPassesFilters(aura, unit, db)
+            local filtered = AuraPassesFilters(aura, unit, db, false)
             if filtered then
                 out[#out + 1] = filtered
             end
