@@ -4,17 +4,15 @@ ns.uf = ns.uf or {}
 
 local DEFAULT_SIZE = 36
 local DEFAULT_ANCHOR = "CENTER"
+
 local MAX_CENTER_DEBUFFS = 5
 local AURA_SCAN_LIMIT = 32
 local CENTER_DEBUFF_SPACING = 2
-local MAX_PRIVATE_AURAS = 3
-local PRIVATE_AURA_SPACING = 2
-local DEFAULT_PRIVATE_AURA_ANCHOR = "RIGHT"
+
 local IsSecretValue = issecretvalue or function(...)
     return false
 end
-local AddPrivateAuraAnchor = C_UnitAuras and C_UnitAuras.AddPrivateAuraAnchor
-local RemovePrivateAuraAnchor = C_UnitAuras and C_UnitAuras.RemovePrivateAuraAnchor
+
 local HIDDEN_UTILITY_DEBUFFS = {
     [57723] = true,  -- Exhaustion
     [57724] = true,  -- Sated
@@ -39,9 +37,9 @@ local HIDDEN_UTILITY_DEBUFF_NAMES = {
     ["시간 변위"] = true,
 }
 
--- 1차 구현:
--- 출혈은 API만으로 안정 분류가 어려워서 spellID 테이블 기반으로 처리.
--- 아래 테이블은 필요할 때 직접 보강하면 된다.
+-- 1차 안정판:
+-- 출혈은 spellID 테이블 기반으로 분류.
+-- 정확도는 이후 spellID 추가로 보강하면 됨.
 local BLEED_SPELL_IDS = {
     -- [12345] = true,
 }
@@ -148,7 +146,9 @@ local function IsHiddenUtilityAura(data)
     local sid = data and data.spellId
     if sid and not IsSecretValue(sid) then
         local n = tonumber(sid)
-        if (n and HIDDEN_UTILITY_DEBUFFS[n] == true) or HIDDEN_UTILITY_DEBUFFS[sid] == true or HIDDEN_UTILITY_DEBUFFS[tostring(sid)] == true then
+        if (n and HIDDEN_UTILITY_DEBUFFS[n] == true)
+            or HIDDEN_UTILITY_DEBUFFS[sid] == true
+            or HIDDEN_UTILITY_DEBUFFS[tostring(sid)] == true then
             return true
         end
     end
@@ -213,6 +213,7 @@ local function AlignVisibleSlots(container)
             shown[#shown + 1] = container.slots[i]
         end
     end
+
     if #shown == 0 then
         return
     end
@@ -304,6 +305,34 @@ local function GetAuraTypeKey(aura)
     return "none"
 end
 
+local function IsTypeShownInConfig(db, typeKey)
+    if typeKey == "magic" then
+        return db.showMagic ~= false
+    elseif typeKey == "curse" then
+        return db.showCurse ~= false
+    elseif typeKey == "disease" then
+        return db.showDisease ~= false
+    elseif typeKey == "poison" then
+        return db.showPoison ~= false
+    elseif typeKey == "bleed" then
+        return db.showBleed ~= false
+    end
+
+    return db.showNone ~= false
+end
+
+local function GetAuraRemainingTime(aura)
+    if not aura then
+        return math.huge
+    end
+
+    local expirationTime = aura.expirationTime
+    if expirationTime and not IsSecretValue(expirationTime) and expirationTime > 0 then
+        return math.max(0, expirationTime - GetTime())
+    end
+
+    return math.huge
+end
 local function GetPlayerDispelCapabilities()
     local canMagic = false
     local canCurse = false
@@ -371,34 +400,6 @@ local function CanPlayerDispelAura(aura)
     local caps = GetPlayerDispelCapabilities()
     return caps[typeKey] == true
 end
-local function IsTypeShownInConfig(db, typeKey)
-    if typeKey == "magic" then
-        return db.showMagic ~= false
-    elseif typeKey == "curse" then
-        return db.showCurse ~= false
-    elseif typeKey == "disease" then
-        return db.showDisease ~= false
-    elseif typeKey == "poison" then
-        return db.showPoison ~= false
-    elseif typeKey == "bleed" then
-        return db.showBleed ~= false
-    end
-
-    return db.showNone ~= false
-end
-
-local function GetAuraRemainingTime(aura)
-    if not aura then
-        return math.huge
-    end
-
-    local expirationTime = aura.expirationTime
-    if expirationTime and not IsSecretValue(expirationTime) and expirationTime > 0 then
-        return math.max(0, expirationTime - GetTime())
-    end
-
-    return math.huge
-end
 
 local function CompareAuras(a, b)
     local aBoss = a.isBossAura and 0 or 1
@@ -433,6 +434,7 @@ local function CompareAuras(a, b)
 
     return (tonumber(a.auraInstanceID) or 0) < (tonumber(b.auraInstanceID) or 0)
 end
+
 local function GetAurasByFilter(unit, filter, maxCount)
     maxCount = maxCount or AURA_SCAN_LIMIT
     local out = {}
@@ -459,6 +461,7 @@ local function BuildDisplayAuraList(unit, db)
         local aura = source[i]
         if aura and aura.auraInstanceID and not IsHiddenUtilityAura(aura) then
             local typeKey = GetAuraTypeKey(aura)
+
             if db.onlyDispellable and not CanPlayerDispelAura(aura) then
                 -- skip
             elseif IsTypeShownInConfig(db, typeKey) then
@@ -517,245 +520,8 @@ local function BuildPreviewTypes(db)
     return out
 end
 
-local function HidePrivateAuraContainer(frame)
-    local container = frame and frame.PrivateAuraContainer
-    if not container then
-        return
-    end
-
-    for i = 1, #container.slots do
-        container.slots[i]:Hide()
-    end
-
-    container:Hide()
-end
-
-local function ClearPrivateAuraAnchors(frame)
-    if not frame then
-        return
-    end
-
-    if RemovePrivateAuraAnchor then
-        if frame.__privateAuraAnchor1 then
-            RemovePrivateAuraAnchor(frame.__privateAuraAnchor1)
-        end
-        if frame.__privateAuraAnchor2 then
-            RemovePrivateAuraAnchor(frame.__privateAuraAnchor2)
-        end
-        if frame.__privateAuraAnchor3 then
-            RemovePrivateAuraAnchor(frame.__privateAuraAnchor3)
-        end
-    end
-
-    frame.__privateAuraAnchor1 = nil
-    frame.__privateAuraAnchor2 = nil
-    frame.__privateAuraAnchor3 = nil
-    frame.__privateAuraSignature = nil
-end
-
-local function CreatePrivateAuraContainer(frame)
-    if frame.PrivateAuraContainer then
-        return frame.PrivateAuraContainer
-    end
-
-    local container = CreateFrame("Frame", nil, frame)
-    container:SetFrameLevel(frame:GetFrameLevel() + 25)
-    container:SetSize(DEFAULT_SIZE, DEFAULT_SIZE)
-    container:Hide()
-    container.slots = {}
-
-    for i = 1, MAX_PRIVATE_AURAS do
-        local holder = CreateFrame("Frame", nil, container)
-        holder:SetFrameLevel(container:GetFrameLevel())
-        holder:SetSize(DEFAULT_SIZE, DEFAULT_SIZE)
-        holder:EnableMouse(true)
-        holder:Hide()
-
-        container.slots[i] = holder
-    end
-
-    frame.PrivateAuraContainer = container
-    return container
-end
-
-local function ApplyPrivateAuraLayout(frame, db)
-    local container = frame and (frame.PrivateAuraContainer or CreatePrivateAuraContainer(frame))
-    if not (container and frame and db) then
-        return
-    end
-
-    local size = tonumber(db.size) or DEFAULT_SIZE
-    local anchor = db.privateAuraAnchor or DEFAULT_PRIVATE_AURA_ANCHOR
-
-    container:ClearAllPoints()
-
-    if anchor == "LEFT" then
-        local totalHeight = (size * MAX_PRIVATE_AURAS) + (PRIVATE_AURA_SPACING * (MAX_PRIVATE_AURAS - 1))
-        container:SetSize(size, totalHeight)
-        container:SetPoint("RIGHT", frame, "LEFT", -2, 0)
-
-        for i = 1, MAX_PRIVATE_AURAS do
-            local holder = container.slots[i]
-            holder:SetSize(size, size)
-            holder:ClearAllPoints()
-
-            if i == 1 then
-                holder:SetPoint("TOP", container, "TOP", 0, 0)
-            else
-                holder:SetPoint("TOP", container.slots[i - 1], "BOTTOM", 0, -PRIVATE_AURA_SPACING)
-            end
-        end
-    elseif anchor == "TOP" then
-        local totalWidth = (size * MAX_PRIVATE_AURAS) + (PRIVATE_AURA_SPACING * (MAX_PRIVATE_AURAS - 1))
-        container:SetSize(totalWidth, size)
-        container:SetPoint("BOTTOM", frame, "TOP", 0, 2)
-
-        for i = 1, MAX_PRIVATE_AURAS do
-            local holder = container.slots[i]
-            holder:SetSize(size, size)
-            holder:ClearAllPoints()
-
-            if i == 1 then
-                holder:SetPoint("LEFT", container, "LEFT", 0, 0)
-            else
-                holder:SetPoint("LEFT", container.slots[i - 1], "RIGHT", PRIVATE_AURA_SPACING, 0)
-            end
-        end
-    elseif anchor == "BOTTOM" then
-        local totalWidth = (size * MAX_PRIVATE_AURAS) + (PRIVATE_AURA_SPACING * (MAX_PRIVATE_AURAS - 1))
-        container:SetSize(totalWidth, size)
-        container:SetPoint("TOP", frame, "BOTTOM", 0, -2)
-
-        for i = 1, MAX_PRIVATE_AURAS do
-            local holder = container.slots[i]
-            holder:SetSize(size, size)
-            holder:ClearAllPoints()
-
-            if i == 1 then
-                holder:SetPoint("LEFT", container, "LEFT", 0, 0)
-            else
-                holder:SetPoint("LEFT", container.slots[i - 1], "RIGHT", PRIVATE_AURA_SPACING, 0)
-            end
-        end
-    else
-        local totalHeight = (size * MAX_PRIVATE_AURAS) + (PRIVATE_AURA_SPACING * (MAX_PRIVATE_AURAS - 1))
-        container:SetSize(size, totalHeight)
-        container:SetPoint("LEFT", frame, "RIGHT", 2, 0)
-
-        for i = 1, MAX_PRIVATE_AURAS do
-            local holder = container.slots[i]
-            holder:SetSize(size, size)
-            holder:ClearAllPoints()
-
-            if i == 1 then
-                holder:SetPoint("TOP", container, "TOP", 0, 0)
-            else
-                holder:SetPoint("TOP", container.slots[i - 1], "BOTTOM", 0, -PRIVATE_AURA_SPACING)
-            end
-        end
-    end
-end
-
-local function GetPrivateAuraSignature(frame, db)
-    return table.concat({
-        tostring(frame and frame.unit or ""),
-        tostring(db and db.showPrivateAuras == true),
-        tostring(db and db.privateAuraAnchor or DEFAULT_PRIVATE_AURA_ANCHOR),
-        tostring(db and db.size or DEFAULT_SIZE),
-    }, ":")
-end
-
-local function RegisterPrivateAuraAnchors(frame, db)
-    if not (frame and db) then
-        return
-    end
-
-    local container = frame.PrivateAuraContainer or CreatePrivateAuraContainer(frame)
-    if not container then
-        return
-    end
-
-    if not AddPrivateAuraAnchor then
-        ClearPrivateAuraAnchors(frame)
-        HidePrivateAuraContainer(frame)
-        return
-    end
-
-    if db.showPrivateAuras ~= true or db.enabled == false or not frame.unit or not UnitExists(frame.unit) then
-        ClearPrivateAuraAnchors(frame)
-        HidePrivateAuraContainer(frame)
-        return
-    end
-
-    local signature = GetPrivateAuraSignature(frame, db)
-    if frame.__privateAuraSignature == signature and not frame.__privateAuraPending then
-        container:Show()
-        for i = 1, #container.slots do
-            container.slots[i]:Show()
-        end
-        return
-    end
-
-    if InCombatLockdown() then
-        frame.__privateAuraPending = true
-        return
-    end
-
-    frame.__privateAuraPending = nil
-
-    ApplyPrivateAuraLayout(frame, db)
-    ClearPrivateAuraAnchors(frame)
-
-    local size = tonumber(db.size) or DEFAULT_SIZE
-    local anchorIDs = {}
-
-    for i = 1, MAX_PRIVATE_AURAS do
-        local holder = container.slots[i]
-        holder:SetSize(size, size)
-        holder:Show()
-
-        local auraAnchor = {
-            unitToken = frame.unit,
-            auraIndex = i,
-            parent = holder,
-            showCountdownFrame = false,
-            showCountdownNumbers = true,
-            iconInfo = {
-                iconWidth = size,
-                iconHeight = size,
-                borderScale = 0,
-                iconAnchor = {
-                    point = "CENTER",
-                    relativeTo = holder,
-                    relativePoint = "CENTER",
-                    offsetX = 0,
-                    offsetY = 0,
-                },
-            },
-        }
-
-        anchorIDs[i] = AddPrivateAuraAnchor(auraAnchor)
-    end
-
-    frame.__privateAuraAnchor1 = anchorIDs[1]
-    frame.__privateAuraAnchor2 = anchorIDs[2]
-    frame.__privateAuraAnchor3 = anchorIDs[3]
-    frame.__privateAuraSignature = signature
-
-    container:Show()
-end
-local function SafeRegisterPrivateAuraAnchors(frame, db)
-    local ok = pcall(RegisterPrivateAuraAnchors, frame, db)
-    if not ok then
-        ClearPrivateAuraAnchors(frame)
-        HidePrivateAuraContainer(frame)
-    end
-end
 function ns.uf:CreateCenterDebuff(frame)
     if frame.CenterDebuff then
-        if not frame.PrivateAuraContainer then
-            CreatePrivateAuraContainer(frame)
-        end
         return frame.CenterDebuff
     end
 
@@ -801,10 +567,12 @@ function ns.uf:CreateCenterDebuff(frame)
             if not self.auraInstanceID or not frame.unit then
                 return
             end
+
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             local ok = pcall(function()
                 GameTooltip:SetUnitDebuffByAuraInstanceID(frame.unit, self.auraInstanceID)
             end)
+
             if ok then
                 GameTooltip:Show()
             else
@@ -824,7 +592,6 @@ function ns.uf:CreateCenterDebuff(frame)
     end
 
     frame.CenterDebuff = container
-    CreatePrivateAuraContainer(frame)
     return container
 end
 
@@ -832,6 +599,7 @@ function ns.uf:ApplyCenterDebuffSettings(frame)
     if not frame then
         return
     end
+
     local db = GetCenterDebuffDB()
     if not db then
         return
@@ -839,87 +607,39 @@ function ns.uf:ApplyCenterDebuffSettings(frame)
 
     local container = frame.CenterDebuff or self:CreateCenterDebuff(frame)
     ApplyLayout(container, frame, db)
-    ApplyPrivateAuraLayout(frame, db)
+
     if db.enabled == false then
         HideAllSlots(container)
         container:Hide()
-        ClearPrivateAuraAnchors(frame)
-        HidePrivateAuraContainer(frame)
-        return
     end
-    SafeRegisterPrivateAuraAnchors(frame, db)
 end
 
-function ns.uf:UpdateCenterDebuff(frame)
-    local container = frame and frame.CenterDebuff
-    if not container then
+function ns.uf:UpdateCenterDebuffPreview(frame)
+    if not frame or not frame.CenterDebuff then
         return
     end
+
+    local db = GetCenterDebuffDB()
+    if not db or db.enabled == false or not db.preview then
+        return
+    end
+
+    local container = frame.CenterDebuff
     HideAllSlots(container)
 
-    local cfg = GetCenterDebuffDB() or {}
-
-    if cfg.enabled == false then
-        container:Hide()
-        ClearPrivateAuraAnchors(frame)
-        HidePrivateAuraContainer(frame)
-        return
-    end
-
-    ApplyLayout(container, frame, cfg)
-
-    if cfg.preview then
-        self:UpdateCenterDebuffPreview(frame)
-        SafeRegisterPrivateAuraAnchors(frame, cfg)
-        return
-    end
-
-    if not frame.unit or not UnitExists(frame.unit) then
-        container:Hide()
-        ClearPrivateAuraAnchors(frame)
-        HidePrivateAuraContainer(frame)
-        return
-    end
-
-    local auras = BuildDisplayAuraList(frame.unit, cfg)
-    if not auras or #auras == 0 then
-        container:Hide()
-        SafeRegisterPrivateAuraAnchors(frame, cfg)
-        return
-    end
-
+    local previewTypes = BuildPreviewTypes(db)
     local shown = 0
 
-    for i = 1, MAX_CENTER_DEBUFFS do
-        local aura = auras[i]
+    for i = 1, math.min(#previewTypes, MAX_CENTER_DEBUFFS) do
+        local typeKey = previewTypes[i]
         local slot = container.slots[i]
-        if aura and slot and aura.auraInstanceID then
-            local r, g, b, a = GetAuraBorderColor(frame.unit, aura)
-
-            slot.icon:SetTexture(aura.icon or 136243)
-            slot.auraInstanceID = aura.auraInstanceID
-            slot.__typeKey = aura.__typeKey
-
+        if slot then
+            local r, g, b, a = GetFallbackTypeColor(typeKey)
+            slot.icon:SetTexture(PREVIEW_ICONS[typeKey] or 136243)
+            slot.__typeKey = typeKey
+            slot.count:SetText(i == 1 and "3" or "")
+            slot.cd:Hide()
             ShowBorder(slot, r, g, b, a)
-
-            local countText
-            if C_UnitAuras.GetAuraApplicationDisplayCount then
-                countText = C_UnitAuras.GetAuraApplicationDisplayCount(frame.unit, aura.auraInstanceID, 2, 999)
-            end
-            if not countText then
-                local applications = tonumber(aura.applications) or 0
-                countText = applications > 1 and applications or ""
-            end
-            slot.count:SetText(countText or "")
-
-            local durationInfo = C_UnitAuras.GetAuraDuration and
-                C_UnitAuras.GetAuraDuration(frame.unit, aura.auraInstanceID)
-            if durationInfo then
-                slot.cd:SetCooldownFromDurationObject(durationInfo)
-                slot.cd:Show()
-            else
-                slot.cd:Hide()
-            end
             slot:Show()
             shown = shown + 1
         end
@@ -931,7 +651,6 @@ function ns.uf:UpdateCenterDebuff(frame)
     else
         container:Hide()
     end
-    SafeRegisterPrivateAuraAnchors(frame, cfg)
 end
 
 function ns.uf:UpdateCenterDebuff(frame)
@@ -946,13 +665,11 @@ function ns.uf:UpdateCenterDebuff(frame)
 
     if cfg.enabled == false then
         container:Hide()
-        ClearPrivateAuraAnchors(frame)
-        HidePrivateAuraContainer(frame)
         return
     end
 
     ApplyLayout(container, frame, cfg)
-    RegisterPrivateAuraAnchors(frame, cfg)
+
     if cfg.preview then
         self:UpdateCenterDebuffPreview(frame)
         return
@@ -960,8 +677,6 @@ function ns.uf:UpdateCenterDebuff(frame)
 
     if not frame.unit or not UnitExists(frame.unit) then
         container:Hide()
-        ClearPrivateAuraAnchors(frame)
-        HidePrivateAuraContainer(frame)
         return
     end
 
@@ -979,6 +694,7 @@ function ns.uf:UpdateCenterDebuff(frame)
 
         if aura and slot and aura.auraInstanceID then
             local r, g, b, a = GetAuraBorderColor(frame.unit, aura)
+
             slot.icon:SetTexture(aura.icon or 136243)
             slot.auraInstanceID = aura.auraInstanceID
             slot.__typeKey = aura.__typeKey
