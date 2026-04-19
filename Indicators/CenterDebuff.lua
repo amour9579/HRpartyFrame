@@ -4,10 +4,9 @@ ns.uf = ns.uf or {}
 
 local DEFAULT_SIZE = 36
 local DEFAULT_ANCHOR = "CENTER"
-
 local MAX_CENTER_DEBUFFS = 5
-local AURA_SCAN_LIMIT = 32
 local CENTER_DEBUFF_SPACING = 2
+local AURA_SCAN_LIMIT = 32
 
 local IsSecretValue = issecretvalue or function(...)
     return false
@@ -41,20 +40,9 @@ local HIDDEN_UTILITY_DEBUFF_NAMES = {
     ["시간 변위"] = true,
 }
 
--- 1차 안정판:
--- 출혈은 spellID 테이블 기반으로 분류.
--- 필요하면 이후 spellID를 추가해 정확도를 높이면 됨.
+-- 필요 시 spellID를 계속 추가
 local BLEED_SPELL_IDS = {
     -- [12345] = true,
-}
-
-local TYPE_PRIORITY = {
-    magic = 1,
-    curse = 2,
-    disease = 3,
-    poison = 4,
-    bleed = 5,
-    none = 6,
 }
 
 local PREVIEW_TYPE_ORDER = {
@@ -75,15 +63,6 @@ local PREVIEW_ICONS = {
     none = 134430,
 }
 
--- 표시 개수에 따라 가운데 정렬된 슬롯 인덱스 사용
-local DISPLAY_SLOT_MAP = {
-    [1] = { 3 },
-    [2] = { 2, 4 },
-    [3] = { 2, 3, 4 },
-    [4] = { 1, 2, 4, 5 },
-    [5] = { 1, 2, 3, 4, 5 },
-}
-
 local function GetCenterDebuffDB()
     local cfg = ns:GetPartyConfig()
     return cfg and cfg.debuff
@@ -91,6 +70,9 @@ end
 
 local function SafeBoolean(value, default)
     if value == nil or IsSecretValue(value) then
+        return default == true
+    end
+    if canaccessvalue and not canaccessvalue(value) then
         return default == true
     end
     return value == true
@@ -101,6 +83,9 @@ local function SafeNumber(value, default)
         return default
     end
 
+    if canaccessvalue and not canaccessvalue(value) then
+        return default
+    end
     local n = tonumber(value)
     if n == nil then
         return default
@@ -136,6 +121,7 @@ local function IsReadableValue(value)
 
     return true
 end
+
 local function NormalizeColor(color)
     if type(color) ~= "table" then
         return nil
@@ -225,6 +211,7 @@ local function HideBorder(slot)
     if not (slot and slot.border) then
         return
     end
+
     slot.border.top:Hide()
     slot.border.bottom:Hide()
     slot.border.left:Hide()
@@ -264,6 +251,7 @@ local function HideSlot(slot)
     if slot.cd then
         slot.cd:Hide()
     end
+
     slot.auraInstanceID = nil
     slot.__typeKey = nil
     HideBorder(slot)
@@ -274,11 +262,38 @@ local function HideAllSlots(container)
     if not (container and container.slots) then
         return
     end
+
     for i = 1, #container.slots do
         HideSlot(container.slots[i])
     end
 end
 
+local function AlignVisibleSlots(container)
+    if not (container and container.slots) then
+        return
+    end
+
+    local shown = {}
+    for i = 1, #container.slots do
+        if container.slots[i]:IsShown() then
+            shown[#shown + 1] = container.slots[i]
+        end
+    end
+
+    if #shown == 0 then
+        return
+    end
+
+    local size = shown[1]:GetWidth() or DEFAULT_SIZE
+    local totalWidth = (#shown * size) + ((#shown - 1) * CENTER_DEBUFF_SPACING)
+    local startX = -(totalWidth / 2) + (size / 2)
+
+    for i = 1, #shown do
+        local slot = shown[i]
+        slot:ClearAllPoints()
+        slot:SetPoint("CENTER", container, "CENTER", startX + ((i - 1) * (size + CENTER_DEBUFF_SPACING)), 0)
+    end
+end
 local function ApplyLayout(container, frame, db)
     if not (container and frame and db) then
         return
@@ -287,7 +302,6 @@ local function ApplyLayout(container, frame, db)
     local size = tonumber(db.size) or DEFAULT_SIZE
     local thickness = tonumber(db.iconBorderThickness) or 2
     local totalWidth = (size * MAX_CENTER_DEBUFFS) + (CENTER_DEBUFF_SPACING * (MAX_CENTER_DEBUFFS - 1))
-    local centerIndex = (MAX_CENTER_DEBUFFS + 1) / 2
 
     container:ClearAllPoints()
     container:SetPoint(db.anchor or DEFAULT_ANCHOR, frame, db.anchor or DEFAULT_ANCHOR, db.x or 0, db.y or 0)
@@ -295,11 +309,6 @@ local function ApplyLayout(container, frame, db)
 
     for i = 1, #container.slots do
         local slot = container.slots[i]
-        local offsetIndex = i - centerIndex
-        local offsetX = offsetIndex * (size + CENTER_DEBUFF_SPACING)
-
-        slot:ClearAllPoints()
-        slot:SetPoint("CENTER", container, "CENTER", offsetX, 0)
         slot:SetSize(size, size)
 
         if slot.count then
@@ -361,6 +370,7 @@ local function ResolveAuraIcon(aura)
 
     return nil
 end
+
 local function GetAuraTypeKey(aura)
     if not aura then
         return "none"
@@ -413,19 +423,6 @@ local function IsTypeShownInConfig(db, typeKey)
     end
 
     return db.showNone ~= false
-end
-
-local function GetAuraRemainingTime(aura)
-    if not aura then
-        return math.huge
-    end
-
-    local expirationTime = SafeNumber(aura.expirationTime, nil)
-    if expirationTime and expirationTime > 0 then
-        return math.max(0, expirationTime - GetTime())
-    end
-
-    return math.huge
 end
 
 local function GetPlayerDispelCapabilities()
@@ -490,6 +487,7 @@ local function CanPlayerDispelAura(aura)
     if IsReadableValue(aura.canActivePlayerDispel) then
         return aura.canActivePlayerDispel == true
     end
+
     local typeKey = GetAuraTypeKey(aura)
     if typeKey ~= "magic" and typeKey ~= "curse" and typeKey ~= "disease" and typeKey ~= "poison" then
         return false
@@ -497,36 +495,6 @@ local function CanPlayerDispelAura(aura)
 
     local caps = GetPlayerDispelCapabilities()
     return caps[typeKey] == true
-end
-
-local function CompareAuras(a, b)
-    local aType = TYPE_PRIORITY[a and a.__typeKey] or 99
-    local bType = TYPE_PRIORITY[b and b.__typeKey] or 99
-    if aType ~= bType then
-        return aType < bType
-    end
-
-    local aRemaining = SafeNumber(a and a.__remaining, math.huge)
-    local bRemaining = SafeNumber(b and b.__remaining, math.huge)
-    if aRemaining ~= bRemaining then
-        return aRemaining < bRemaining
-    end
-
-    local aCount = SafeNumber(a and a.applications, 0)
-    local bCount = SafeNumber(b and b.applications, 0)
-    if aCount ~= bCount then
-        return aCount > bCount
-    end
-
-    local aSpell = SafeNumber(a and a.spellId, 0)
-    local bSpell = SafeNumber(b and b.spellId, 0)
-    if aSpell ~= bSpell then
-        return aSpell < bSpell
-    end
-
-    local aAuraID = SafeNumber(a and a.auraInstanceID, 0)
-    local bAuraID = SafeNumber(b and b.auraInstanceID, 0)
-    return aAuraID < bAuraID
 end
 
 local function RefreshAuraByInstanceID(unit, aura)
@@ -544,49 +512,59 @@ local function RefreshAuraByInstanceID(unit, aura)
     return aura
 end
 
-local function CollectCandidateAuras(unit, db, maxCount)
-    maxCount = maxCount or AURA_SCAN_LIMIT
+local function AuraPassesFilters(aura, unit, db)
+    if not aura or not aura.auraInstanceID then
+        return false
+    end
+
+    local refreshed = RefreshAuraByInstanceID(unit, aura)
+    if not refreshed or not refreshed.auraInstanceID then
+        return false
+    end
+
+    if IsHiddenUtilityAura(refreshed) then
+        return false
+    end
+
+    if not ResolveAuraIcon(refreshed) then
+        return false
+    end
+
+    if db.onlyDispellable and not CanPlayerDispelAura(refreshed) then
+        return false
+    end
+
+    local typeKey = GetAuraTypeKey(refreshed)
+    if not IsTypeShownInConfig(db, typeKey) then
+        return false
+    end
+
+    refreshed.__typeKey = typeKey
+    return refreshed
+end
+
+local function CollectDisplayAuras(unit, db, maxCount)
     local out = {}
-    local seen = {}
+    maxCount = maxCount or MAX_CENTER_DEBUFFS
 
     if not unit or not UnitExists(unit) then
         return out
     end
 
-    local function AddAura(aura)
-        if not aura or not aura.auraInstanceID then
-            return
-        end
-
-        if seen[aura.auraInstanceID] then
-            return
-        end
-
-        local refreshed = RefreshAuraByInstanceID(unit, aura)
-        if not refreshed or not refreshed.auraInstanceID then
-            return
-        end
-
-        seen[refreshed.auraInstanceID] = true
-        out[#out + 1] = refreshed
-    end
-
-    -- 예전 안정 버전 흐름:
-    -- 해제 가능 우선이면 HARMFUL|RAID 슬롯 먼저 본다.
-    if db and db.onlyDispellable and C_UnitAuras and C_UnitAuras.GetAuraSlots and C_UnitAuras.GetAuraDataBySlot then
-        local slots = { C_UnitAuras.GetAuraSlots(unit, "HARMFUL|RAID", maxCount) }
+    if db.onlyDispellable then
+        local slots = { C_UnitAuras.GetAuraSlots(unit, "HARMFUL|RAID", AURA_SCAN_LIMIT) }
         for i = 2, #slots do
-            local aura = C_UnitAuras.GetAuraDataBySlot(unit, slots[i])
-            AddAura(aura)
-            if #out >= maxCount then
-                return out
+            local slot = slots[i]
+            local aura = C_UnitAuras.GetAuraDataBySlot(unit, slot)
+            local filtered = AuraPassesFilters(aura, unit, db)
+            if filtered then
+                out[#out + 1] = filtered
+                if #out >= maxCount then
+                    break
+                end
             end
         end
-    end
-
-    -- 예전 안정 버전 흐름:
-    -- 전체 디버프는 GetDebuffDataByIndex 순차 탐색을 우선 사용.
-    if C_UnitAuras and C_UnitAuras.GetDebuffDataByIndex then
+    else
         local index = 1
         while #out < maxCount do
             local aura = C_UnitAuras.GetDebuffDataByIndex(unit, index)
@@ -594,60 +572,12 @@ local function CollectCandidateAuras(unit, db, maxCount)
                 break
             end
 
-            AddAura(aura)
+            local filtered = AuraPassesFilters(aura, unit, db)
+            if filtered then
+                out[#out + 1] = filtered
+            end
+
             index = index + 1
-        end
-    end
-
-    -- 최후 fallback
-    if #out == 0 and C_UnitAuras and C_UnitAuras.GetAuraSlots and C_UnitAuras.GetAuraDataBySlot then
-        local slots = { C_UnitAuras.GetAuraSlots(unit, "HARMFUL", maxCount) }
-        for i = 2, #slots do
-            local aura = C_UnitAuras.GetAuraDataBySlot(unit, slots[i])
-            AddAura(aura)
-            if #out >= maxCount then
-                break
-            end
-        end
-    end
-
-    return out
-end
-
-local function HasRenderableAuraData(aura)
-    if not aura or not aura.auraInstanceID then
-        return false
-    end
-
-    return ResolveAuraIcon(aura) ~= nil
-end
-local function BuildDisplayAuraList(unit, db)
-    local source = CollectCandidateAuras(unit, db, AURA_SCAN_LIMIT)
-    local out = {}
-
-    for i = 1, #source do
-        local aura = source[i]
-        if aura
-            and aura.auraInstanceID
-            and HasRenderableAuraData(aura)
-            and not IsHiddenUtilityAura(aura) then
-            local typeKey = GetAuraTypeKey(aura)
-
-            if db.onlyDispellable and not CanPlayerDispelAura(aura) then
-                -- skip
-            elseif IsTypeShownInConfig(db, typeKey) then
-                aura.__typeKey = typeKey
-                aura.__remaining = GetAuraRemainingTime(aura)
-                out[#out + 1] = aura
-            end
-        end
-    end
-
-    table.sort(out, CompareAuras)
-
-    if #out > MAX_CENTER_DEBUFFS then
-        for i = #out, MAX_CENTER_DEBUFFS + 1, -1 do
-            out[i] = nil
         end
     end
 
@@ -689,18 +619,6 @@ local function BuildPreviewTypes(db)
     end
 
     return out
-end
-
-local function GetDisplaySlotsForCount(count)
-    if count < 1 then
-        return nil
-    end
-
-    if count > MAX_CENTER_DEBUFFS then
-        count = MAX_CENTER_DEBUFFS
-    end
-
-    return DISPLAY_SLOT_MAP[count] or DISPLAY_SLOT_MAP[MAX_CENTER_DEBUFFS]
 end
 
 function ns.uf:CreateCenterDebuff(frame)
@@ -752,11 +670,11 @@ function ns.uf:CreateCenterDebuff(frame)
             end
 
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-            local ok = pcall(function()
+            local success = pcall(function()
                 GameTooltip:SetUnitDebuffByAuraInstanceID(frame.unit, self.auraInstanceID)
             end)
 
-            if ok then
+            if success then
                 GameTooltip:Show()
             else
                 GameTooltip:Hide()
@@ -811,25 +729,16 @@ function ns.uf:UpdateCenterDebuffPreview(frame)
     HideAllSlots(container)
 
     local previewTypes = BuildPreviewTypes(db)
-    local shownCount = math.min(#previewTypes, MAX_CENTER_DEBUFFS)
-    local slotIndices = GetDisplaySlotsForCount(shownCount)
-
-    if not slotIndices then
-        container:Hide()
-        return
-    end
-
     local shown = 0
-    for auraIndex = 1, shownCount do
-        local typeKey = previewTypes[auraIndex]
-        local physicalIndex = slotIndices[auraIndex]
-        local slot = physicalIndex and container.slots[physicalIndex]
 
+    for i = 1, math.min(#previewTypes, MAX_CENTER_DEBUFFS) do
+        local typeKey = previewTypes[i]
+        local slot = container.slots[i]
         if slot then
             local r, g, b, a = GetFallbackTypeColor(typeKey)
             slot.icon:SetTexture(PREVIEW_ICONS[typeKey] or 136243)
             slot.__typeKey = typeKey
-            slot.count:SetText(auraIndex == 1 and "3" or "")
+            slot.count:SetText(i == 1 and "3" or "")
             slot.cd:Hide()
             ShowBorder(slot, r, g, b, a)
             slot:Show()
@@ -838,6 +747,7 @@ function ns.uf:UpdateCenterDebuffPreview(frame)
     end
 
     if shown > 0 then
+        AlignVisibleSlots(container)
         container:Show()
     else
         container:Hide()
@@ -851,7 +761,6 @@ function ns.uf:UpdateCenterDebuff(frame)
     end
 
     local cfg = GetCenterDebuffDB() or {}
-
     if cfg.enabled == false then
         HideAllSlots(container)
         container:Hide()
@@ -860,6 +769,7 @@ function ns.uf:UpdateCenterDebuff(frame)
 
     ApplyLayout(container, frame, cfg)
     HideAllSlots(container)
+
     if cfg.preview then
         self:UpdateCenterDebuffPreview(frame)
         return
@@ -870,25 +780,17 @@ function ns.uf:UpdateCenterDebuff(frame)
         return
     end
 
-    local auras = BuildDisplayAuraList(frame.unit, cfg)
-    local shownCount = auras and #auras or 0
-    if shownCount == 0 then
-        container:Hide()
-        return
-    end
-
-    local slotIndices = GetDisplaySlotsForCount(shownCount)
-    if not slotIndices then
+    local auras = CollectDisplayAuras(frame.unit, cfg, MAX_CENTER_DEBUFFS)
+    if not auras or #auras == 0 then
         container:Hide()
         return
     end
 
     local shown = 0
 
-    for auraIndex = 1, shownCount do
-        local aura = auras[auraIndex]
-        local physicalIndex = slotIndices[auraIndex]
-        local slot = physicalIndex and container.slots[physicalIndex]
+    for i = 1, math.min(#auras, MAX_CENTER_DEBUFFS) do
+        local aura = auras[i]
+        local slot = container.slots[i]
 
         if aura and slot and aura.auraInstanceID then
             local iconTex = ResolveAuraIcon(aura)
@@ -922,13 +824,12 @@ function ns.uf:UpdateCenterDebuff(frame)
 
                 slot:Show()
                 shown = shown + 1
-            else
-                HideSlot(slot)
             end
         end
     end
 
     if shown > 0 then
+        AlignVisibleSlots(container)
         container:Show()
     else
         container:Hide()
