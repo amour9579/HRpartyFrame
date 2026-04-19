@@ -334,8 +334,15 @@ local function InferTypeKeyFromColor(unit, auraInstanceID)
     end
 
     local r, g, b = ns:GetAuraDispelColor(unit, auraInstanceID)
+    if not IsSafeLookupValue(r) or not IsSafeLookupValue(g) or not IsSafeLookupValue(b) then
+        return "none", "secret"
+    end
+
+    r = tonumber(r)
+    g = tonumber(g)
+    b = tonumber(b)
     if not r or not g or not b then
-        return "none", nil
+        return "none", "secret"
     end
 
     local colorKey = ns:AuraResolveCacheBuildColorKey(r, g, b)
@@ -354,15 +361,18 @@ local function InferTypeKeyFromColor(unit, auraInstanceID)
 
     for key, color in pairs(candidates) do
         local cr, cg, cb = color[1], color[2], color[3]
-        local dist = ((r - cr) ^ 2) + ((g - cg) ^ 2) + ((b - cb) ^ 2)
-        if dist < bestDist then
-            bestDist = dist
-            bestKey = key
+        if cr and cg and cb then
+            local dist = ((r - cr) ^ 2) + ((g - cg) ^ 2) + ((b - cb) ^ 2)
+            if dist < bestDist then
+                bestDist = dist
+                bestKey = key
+            end
         end
     end
 
     return bestKey, colorKey
 end
+
 local function IsTypeShownInConfig(db, typeKey)
     if typeKey == "magic" then
         return db.showMagic ~= false
