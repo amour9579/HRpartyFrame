@@ -5,7 +5,7 @@ ns.uf = ns.uf or {}
 local DEFAULT_SIZE = 36
 local DEFAULT_ANCHOR = "CENTER"
 local MAX_CENTER_DEBUFFS = 5
-local AURA_SCAN_LIMIT = 40
+local AURA_SCAN_LIMIT = 32
 local CENTER_DEBUFF_SPACING = 2
 local MAX_PRIVATE_AURAS = 3
 local PRIVATE_AURA_SPACING = 2
@@ -282,7 +282,7 @@ local function GetAuraTypeKey(aura)
         end
     end
 
-    local dispelName = aura.dispelName
+    local dispelName = aura.dispelName or aura.debuffType
     if not dispelName or IsSecretValue(dispelName) then
         return "none"
     end
@@ -744,6 +744,13 @@ local function RegisterPrivateAuraAnchors(frame, db)
 
     container:Show()
 end
+local function SafeRegisterPrivateAuraAnchors(frame, db)
+    local ok = pcall(RegisterPrivateAuraAnchors, frame, db)
+    if not ok then
+        ClearPrivateAuraAnchors(frame)
+        HidePrivateAuraContainer(frame)
+    end
+end
 function ns.uf:CreateCenterDebuff(frame)
     if frame.CenterDebuff then
         if not frame.PrivateAuraContainer then
@@ -840,33 +847,79 @@ function ns.uf:ApplyCenterDebuffSettings(frame)
         HidePrivateAuraContainer(frame)
         return
     end
-    RegisterPrivateAuraAnchors(frame, db)
+    SafeRegisterPrivateAuraAnchors(frame, db)
 end
 
-function ns.uf:UpdateCenterDebuffPreview(frame)
-    if not frame or not frame.CenterDebuff then
+function ns.uf:UpdateCenterDebuff(frame)
+    local container = frame and frame.CenterDebuff
+    if not container then
         return
     end
-    local db = GetCenterDebuffDB()
-    if not db or db.enabled == false or not db.preview then
+    HideAllSlots(container)
+
+    local cfg = GetCenterDebuffDB() or {}
+
+    if cfg.enabled == false then
+        container:Hide()
+        ClearPrivateAuraAnchors(frame)
+        HidePrivateAuraContainer(frame)
         return
     end
 
-    local container = frame.CenterDebuff
-    HideAllSlots(container)
-    local previewTypes = BuildPreviewTypes(db)
+    ApplyLayout(container, frame, cfg)
+
+    if cfg.preview then
+        self:UpdateCenterDebuffPreview(frame)
+        SafeRegisterPrivateAuraAnchors(frame, cfg)
+        return
+    end
+
+    if not frame.unit or not UnitExists(frame.unit) then
+        container:Hide()
+        ClearPrivateAuraAnchors(frame)
+        HidePrivateAuraContainer(frame)
+        return
+    end
+
+    local auras = BuildDisplayAuraList(frame.unit, cfg)
+    if not auras or #auras == 0 then
+        container:Hide()
+        SafeRegisterPrivateAuraAnchors(frame, cfg)
+        return
+    end
+
     local shown = 0
 
-    for i = 1, math.min(#previewTypes, MAX_CENTER_DEBUFFS) do
-        local typeKey = previewTypes[i]
+    for i = 1, MAX_CENTER_DEBUFFS do
+        local aura = auras[i]
         local slot = container.slots[i]
-        if slot then
-            local r, g, b, a = GetFallbackTypeColor(typeKey)
-            slot.icon:SetTexture(PREVIEW_ICONS[typeKey] or 136243)
-            slot.__typeKey = typeKey
-            slot.count:SetText(i == 1 and "3" or "")
-            slot.cd:Hide()
+        if aura and slot and aura.auraInstanceID then
+            local r, g, b, a = GetAuraBorderColor(frame.unit, aura)
+
+            slot.icon:SetTexture(aura.icon or 136243)
+            slot.auraInstanceID = aura.auraInstanceID
+            slot.__typeKey = aura.__typeKey
+
             ShowBorder(slot, r, g, b, a)
+
+            local countText
+            if C_UnitAuras.GetAuraApplicationDisplayCount then
+                countText = C_UnitAuras.GetAuraApplicationDisplayCount(frame.unit, aura.auraInstanceID, 2, 999)
+            end
+            if not countText then
+                local applications = tonumber(aura.applications) or 0
+                countText = applications > 1 and applications or ""
+            end
+            slot.count:SetText(countText or "")
+
+            local durationInfo = C_UnitAuras.GetAuraDuration and
+                C_UnitAuras.GetAuraDuration(frame.unit, aura.auraInstanceID)
+            if durationInfo then
+                slot.cd:SetCooldownFromDurationObject(durationInfo)
+                slot.cd:Show()
+            else
+                slot.cd:Hide()
+            end
             slot:Show()
             shown = shown + 1
         end
@@ -878,6 +931,7 @@ function ns.uf:UpdateCenterDebuffPreview(frame)
     else
         container:Hide()
     end
+    SafeRegisterPrivateAuraAnchors(frame, cfg)
 end
 
 function ns.uf:UpdateCenterDebuff(frame)
