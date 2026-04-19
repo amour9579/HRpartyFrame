@@ -8,6 +8,7 @@ local MAX_CENTER_DEBUFFS = 5
 local CENTER_DEBUFF_SPACING = 2
 
 local DEBUG_DEBUFF = false
+
 local IsSecretValue = issecretvalue or function(...)
     return false
 end
@@ -44,66 +45,7 @@ local function DebugLog(...)
     end
     print("|cff33ff99HRpartyFrame Debuff:|r", ...)
 end
-ns.CenterDebuffRetry = ns.CenterDebuffRetry or {
-    pending = {},
-}
 
-local function ClearCenterDebuffRetry(unit)
-    if not unit or not ns.CenterDebuffRetry then
-        return
-    end
-
-    ns.CenterDebuffRetry.pending[unit] = nil
-end
-
-local function RequestCenterDebuffRetry(unit)
-    if not unit then
-        return
-    end
-
-    local pool = ns.CenterDebuffRetry.pending
-    local info = pool[unit]
-
-    if not info then
-        info = {
-            attempts = 0,
-            scheduled = false,
-        }
-        pool[unit] = info
-    end
-
-    if info.scheduled then
-        return
-    end
-
-    if info.attempts >= 8 then
-        return
-    end
-
-    info.attempts = info.attempts + 1
-    info.scheduled = true
-
-    C_Timer.After(0.08, function()
-        local current = pool[unit]
-        if not current then
-            return
-        end
-
-        current.scheduled = false
-
-        if not ns.ForEachUnitFrame then
-            return
-        end
-
-        ns:ForEachUnitFrame(function(frame)
-            if frame and frame.unit == unit and frame:IsShown() then
-                if ns.uf and ns.uf.UpdateCenterDebuff then
-                    ns.uf:UpdateCenterDebuff(frame)
-                end
-            end
-        end)
-    end)
-end
 local function GetCenterDebuffDB()
     local cfg = ns:GetPartyConfig()
     return cfg and cfg.debuff
@@ -348,19 +290,7 @@ local function GetSpellTextureSafe(spellID)
     return nil
 end
 
-local function IsAuraResolved(aura)
-    if not aura then
-        return false
-    end
-
-    return IsSafeLookupValue(aura.spellId)
-        or IsSafeLookupValue(aura.name)
-        or IsSafeLookupValue(aura.dispelName)
-        or IsSafeLookupValue(aura.debuffType)
-        or IsSafeLookupValue(aura.icon)
-end
-
-local function GetAuraTypeKey(aura)
+local function GetAuraTypeKeyFromReadableFields(aura)
     if not aura then
         return "none"
     end
@@ -378,7 +308,7 @@ local function GetAuraTypeKey(aura)
     end
 
     if not dispelName then
-        return "none"
+        return nil
     end
 
     local key = tostring(dispelName):lower()
@@ -398,6 +328,41 @@ local function GetAuraTypeKey(aura)
     return "none"
 end
 
+local function InferTypeKeyFromColor(unit, auraInstanceID)
+    if not (unit and auraInstanceID and ns.GetAuraDispelColor) then
+        return "none", nil
+    end
+
+    local r, g, b = ns:GetAuraDispelColor(unit, auraInstanceID)
+    if not r or not g or not b then
+        return "none", nil
+    end
+
+    local colorKey = ns:AuraResolveCacheBuildColorKey(r, g, b)
+
+    local candidates = {
+        magic = { GetFallbackTypeColor("magic") },
+        curse = { GetFallbackTypeColor("curse") },
+        disease = { GetFallbackTypeColor("disease") },
+        poison = { GetFallbackTypeColor("poison") },
+        bleed = { GetFallbackTypeColor("bleed") },
+        none = { GetFallbackTypeColor("none") },
+    }
+
+    local bestKey = "none"
+    local bestDist = math.huge
+
+    for key, color in pairs(candidates) do
+        local cr, cg, cb = color[1], color[2], color[3]
+        local dist = ((r - cr) ^ 2) + ((g - cg) ^ 2) + ((b - cb) ^ 2)
+        if dist < bestDist then
+            bestDist = dist
+            bestKey = key
+        end
+    end
+
+    return bestKey, colorKey
+end
 local function IsTypeShownInConfig(db, typeKey)
     if typeKey == "magic" then
         return db.showMagic ~= false
@@ -468,7 +433,7 @@ local function GetPlayerDispelCapabilities()
     }
 end
 
-local function CanPlayerDispelAura(aura)
+local function CanPlayerDispelAura(aura, typeKey)
     if not aura then
         return false
     end
@@ -477,7 +442,6 @@ local function CanPlayerDispelAura(aura)
         return aura.canActivePlayerDispel == true
     end
 
-    local typeKey = GetAuraTypeKey(aura)
     if typeKey ~= "magic" and typeKey ~= "curse" and typeKey ~= "disease" and typeKey ~= "poison" then
         return false
     end
@@ -498,7 +462,19 @@ local function RefreshAuraByInstanceID(unit, auraInstanceID)
     return nil
 end
 
-local function ResolveDisplayIcon(aura, cachedIcon)
+local function IsAuraResolved(aura)
+    if not aura then
+        return false
+    end
+
+    return IsSafeLookupValue(aura.spellId)
+        or IsSafeLookupValue(aura.name)
+        or IsSafeLookupValue(aura.dispelName)
+        or IsSafeLookupValue(aura.debuffType)
+        or IsSafeLookupValue(aura.icon)
+end
+
+local function ResolveDisplayIcon(aura, learned)
     if aura and IsSafeLookupValue(aura.icon) then
         return aura.icon
     end
@@ -507,23 +483,19 @@ local function ResolveDisplayIcon(aura, cachedIcon)
     if spellTex then
         return spellTex
     end
-    if cachedIcon then
-        return cachedIcon
+    if learned and learned.icon then
+        return learned.icon
     end
 
     return 136243
 end
 
 local function ShouldShowResolvedAura(aura, db, typeKey)
-    if not aura then
-        return false, "no_aura"
-    end
-
     if not IsTypeShownInConfig(db, typeKey) then
         return false, "type_filtered:" .. tostring(typeKey)
     end
 
-    if db.onlyDispellable and not CanPlayerDispelAura(aura) then
+    if db.onlyDispellable and not CanPlayerDispelAura(aura, typeKey) then
         return false, "not_dispellable"
     end
 
@@ -531,7 +503,7 @@ local function ShouldShowResolvedAura(aura, db, typeKey)
 end
 
 local function CollectDisplayAuras(unit, db)
-    ns:CenterDebuffStateBegin(unit)
+    ns:AuraResolveCacheBegin(unit)
     local index = 1
     local scanned = 0
 
@@ -545,21 +517,43 @@ local function CollectDisplayAuras(unit, db)
 
         local data = RefreshAuraByInstanceID(unit, aura.auraInstanceID)
         if data and data.auraInstanceID then
+            local readableType = GetAuraTypeKeyFromReadableFields(data)
+            local inferredType, colorKey = InferTypeKeyFromColor(unit, data.auraInstanceID)
             local resolved = IsAuraResolved(data)
-            local typeKey = resolved and GetAuraTypeKey(data) or "none"
+            local typeKey = readableType or inferredType or "none"
+
+            local fingerprint = ns:AuraResolveCacheBuildFingerprint(unit, data, typeKey, colorKey)
+            local learned = ns:AuraResolveCacheLookupLearned(fingerprint)
+
+            local icon = ResolveDisplayIcon(data, learned)
+            local displayName = SafeString(data.name, learned and learned.displayName or "nil")
+            local spellId = SafeNumber(data.spellId, learned and learned.spellId or nil)
+
+            if learned and not readableType and learned.typeKey then
+                typeKey = learned.typeKey
+            end
             local filterPass = false
             local pendingVisible = false
+            local learnedFlag = false
             local reason = "unresolved"
 
-            if resolved then
+            if resolved or learned then
                 filterPass, reason = ShouldShowResolvedAura(data, db, typeKey)
+                learnedFlag = learned ~= nil and not resolved
             else
-                pendingVisible = InCombatLockdown() and true or false
+                pendingVisible = InCombatLockdown() == true
             end
 
-            local icon = ResolveDisplayIcon(data, nil)
+            if resolved and fingerprint then
+                ns:AuraResolveCacheLearn(fingerprint, {
+                    icon = icon,
+                    spellId = spellId,
+                    displayName = displayName,
+                    typeKey = typeKey,
+                })
+            end
 
-            local entry = ns:CenterDebuffStateTrack(unit, {
+            ns:AuraResolveCacheTrack(unit, {
                 auraInstanceID = data.auraInstanceID,
                 aura = data,
                 resolved = resolved,
@@ -567,42 +561,47 @@ local function CollectDisplayAuras(unit, db)
                 icon = icon,
                 filterPass = filterPass,
                 pendingVisible = pendingVisible,
-                displayName = SafeString(data.name, "nil"),
-                spellId = SafeNumber(data.spellId, nil),
+                displayName = displayName,
+                spellId = spellId,
+                fingerprint = fingerprint,
+                learned = learnedFlag,
             })
 
-            if entry then
-                if resolved then
+            if DEBUG_DEBUFF then
+                if resolved or learned then
                     if filterPass then
                         DebugLog("ACCEPT", unit, "idx", index, "auraID", tostring(data.auraInstanceID), "type",
-                            tostring(typeKey), "spellID", tostring(entry.spellId or "nil"), "name",
-                            tostring(entry.displayName or "nil"))
+                            tostring(typeKey), "spellID", tostring(spellId or "nil"), "name",
+                            tostring(displayName or "nil"), learnedFlag and "(learned)" or "")
                     else
                         DebugLog("SKIP", unit, "idx", index, "auraID", tostring(data.auraInstanceID), "reason",
-                            tostring(reason), "spellID", tostring(entry.spellId or "nil"), "name",
-                            tostring(entry.displayName or "nil"))
+                            tostring(reason), "spellID", tostring(spellId or "nil"), "name",
+                            tostring(displayName or "nil"))
                     end
                 else
                     if pendingVisible then
-                        DebugLog("ACCEPT", unit, "idx", index, "auraID", tostring(data.auraInstanceID), "type", "none",
-                            "spellID", "nil", "name", "nil", "(unresolved)")
+                        DebugLog("ACCEPT", unit, "idx", index, "auraID", tostring(data.auraInstanceID), "type",
+                            tostring(typeKey), "spellID", "nil", "name", "nil", "(unresolved)")
                     else
                         DebugLog("SKIP", unit, "idx", index, "auraID", tostring(data.auraInstanceID), "reason",
                             "unresolved_out_of_combat")
                     end
                 end
             end
-        else
+        elseif DEBUG_DEBUFF then
             DebugLog("SKIP", unit, "idx", index, "reason", "refresh_failed", "auraID", tostring(aura.auraInstanceID))
         end
 
         index = index + 1
     end
 
-    local accepted = ns:CenterDebuffStateCollect(unit, MAX_CENTER_DEBUFFS)
-    DebugLog("SUMMARY", unit, "scanned", scanned, "accepted", #accepted)
+    local entries = ns:AuraResolveCacheCollect(unit, MAX_CENTER_DEBUFFS)
 
-    return accepted
+    if DEBUG_DEBUFF then
+        DebugLog("SUMMARY", unit, "scanned", scanned, "accepted", #entries)
+    end
+
+    return entries
 end
 
 local function GetAuraBorderColor(unit, entry)
@@ -667,6 +666,7 @@ function ns.uf:CreateCenterDebuff(frame)
         if slot.SetIgnoreParentAlpha then
             slot:SetIgnoreParentAlpha(true)
         end
+
         slot:SetSize(DEFAULT_SIZE, DEFAULT_SIZE)
         slot:EnableMouse(true)
         slot.border = {}
@@ -692,8 +692,8 @@ function ns.uf:CreateCenterDebuff(frame)
         slot.cd = CreateFrame("Cooldown", nil, slot, "CooldownFrameTemplate")
         slot.cd:SetFrameStrata(slot:GetFrameStrata())
         slot.cd:SetFrameLevel(slot:GetFrameLevel() + 1)
-        if cd and cd.SetIgnoreParentAlpha then
-            cd:SetIgnoreParentAlpha(true)
+        if slot.cd.SetIgnoreParentAlpha then
+            slot.cd:SetIgnoreParentAlpha(true)
         end
         slot.cd:SetAllPoints()
         slot.cd:SetReverse(true)
@@ -748,6 +748,9 @@ function ns.uf:ApplyCenterDebuffSettings(frame)
     if db.enabled == false then
         HideAllSlots(container)
         container:Hide()
+        if frame.unit then
+            ns:AuraResolveCacheReset(frame.unit)
+        end
     end
 end
 
@@ -766,7 +769,6 @@ function ns.uf:UpdateCenterDebuffPreview(frame)
 
     local previewTypes = BuildPreviewTypes(db)
     local shown = 0
-    local needRetry = false
 
     for i = 1, math.min(#previewTypes, MAX_CENTER_DEBUFFS) do
         local typeKey = previewTypes[i]
@@ -803,11 +805,15 @@ function ns.uf:UpdateCenterDebuff(frame)
         container:SetIgnoreParentAlpha(true)
     end
     container:SetAlpha(1)
+
     local cfg = GetCenterDebuffDB() or {}
 
     if cfg.enabled == false then
         HideAllSlots(container)
         container:Hide()
+        if frame.unit then
+            ns:AuraResolveCacheReset(frame.unit)
+        end
         return
     end
 
@@ -820,20 +826,21 @@ function ns.uf:UpdateCenterDebuff(frame)
     end
 
     if not frame.unit or not UnitExists(frame.unit) then
-        DebugLog("HIDE", "invalid_unit", tostring(frame and frame.unit))
         container:Hide()
-        ns:CenterDebuffStateReset(frame and frame.unit)
+        if frame.unit then
+            ns:AuraResolveCacheReset(frame.unit)
+        end
         return
     end
 
     local entries = CollectDisplayAuras(frame.unit, cfg)
     if not entries or #entries == 0 then
-        DebugLog("HIDE", frame.unit, "no_accepted_auras")
         container:Hide()
         return
     end
 
     local shown = 0
+    local needRetry = false
 
     for i = 1, math.min(#entries, MAX_CENTER_DEBUFFS) do
         local entry = entries[i]
@@ -841,9 +848,6 @@ function ns.uf:UpdateCenterDebuff(frame)
 
         if entry and slot and entry.auraInstanceID then
             local iconTex = entry.icon or 136243
-            if entry.resolved ~= true and iconTex == 136243 then
-                needRetry = true
-            end
             local r, g, b, a = GetAuraBorderColor(frame.unit, entry)
 
             slot.icon:SetTexture(iconTex)
@@ -869,21 +873,25 @@ function ns.uf:UpdateCenterDebuff(frame)
 
             slot:Show()
             shown = shown + 1
+            if entry.resolved ~= true and entry.learned ~= true then
+                needRetry = true
+            end
         end
     end
 
     if shown > 0 then
         AlignVisibleSlots(container)
         container:Show()
-        DebugLog("SHOW", frame.unit, "shown", shown)
+
         if needRetry then
-            RequestCenterDebuffRetry(frame.unit)
+            ns:AuraResolveCacheRequestRetry(frame.unit)
         else
-            ClearCenterDebuffRetry(frame.unit)
+            ns:AuraResolveCacheClearRetry(frame.unit)
         end
+        DebugLog("SHOW", frame.unit, "shown", shown)
     else
-        DebugLog("HIDE", frame.unit, "shown_zero_after_render")
         container:Hide()
-        ClearCenterDebuffRetry(frame.unit)
+        ns:AuraResolveCacheClearRetry(frame.unit)
+        DebugLog("HIDE", frame.unit, "shown_zero_after_render")
     end
 end
